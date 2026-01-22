@@ -1,0 +1,95 @@
+{
+	"structPath": "/Script/AbilityEditorHelper.GEModifierConfig",
+	"hash": "7b1e77be1202c104c1491bd0497f270d",
+	"fields": [
+		{
+			"name": "Attribute",
+			"category": "Modifier",
+			"kind": "struct",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "/Script/GameplayAbilities.GameplayAttribute",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "ModifierOp",
+			"category": "Modifier",
+			"kind": "enum",
+			"enumPath": "/Script/GameplayAbilities.EGameplayModOp",
+			"enumValues": [
+				"AddBase",
+				"MultiplyAdditive",
+				"DivideAdditive",
+				"MultiplyCompound",
+				"AddFinal",
+				"Max",
+				"Additive",
+				"Multiplicitive",
+				"Division",
+				"Override"
+			],
+			"structPath": "",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "MagnitudeCalculationType",
+			"category": "Modifier",
+			"kind": "enum",
+			"enumPath": "/Script/GameplayAbilities.EGameplayEffectMagnitudeCalculation",
+			"enumValues": [
+				"ScalableFloat",
+				"AttributeBased",
+				"CustomCalculationClass",
+				"SetByCaller"
+			],
+			"structPath": "",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "Magnitude",
+			"category": "Modifier",
+			"kind": "float",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		}
+	],
+	"specialRules":
+	{
+		"GameplayTagContainer": "tag_container_rule",
+		"GameplayAttribute": "attribute_rule"
+	}
+}
