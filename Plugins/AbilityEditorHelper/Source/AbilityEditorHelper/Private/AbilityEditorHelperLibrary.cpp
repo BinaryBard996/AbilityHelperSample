@@ -7,6 +7,7 @@
 #include "Runtime/Launch/Resources/Version.h"
 #include "GameplayTagContainer.h"
 #include "Engine/DataTable.h"
+#include "Kismet/DataTableFunctionLibrary.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "AssetToolsModule.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -68,6 +69,11 @@ namespace
 		OutAssetName   = AssetName;
 		return true;
 	}
+}
+
+const UAbilityEditorHelperSettings* UAbilityEditorHelperLibrary::GetAbilityEditorHelperSettings()
+{
+	return GetDefault<UAbilityEditorHelperSettings>();
 }
 
 UBlueprint* UAbilityEditorHelperLibrary::CreateBlueprintAsset(const FString& BlueprintPath, TSubclassOf<UObject> ParentClass, bool& bOutSuccess)
@@ -574,10 +580,10 @@ bool UAbilityEditorHelperLibrary::WriteStructSchemaToJson(UScriptStruct* StructT
 	return true;
 }
 
-bool UAbilityEditorHelperLibrary::GenerateStructSchemaToPythonFolder(UScriptStruct* StructType, FString& OutJsonFilePath, FString& OutError)
+bool UAbilityEditorHelperLibrary::GenerateStructSchemaToPythonFolder(UScriptStruct* StructType, FString& OutError)
 {
 	OutError.Reset();
-	OutJsonFilePath.Reset();
+	FString SchemaJsonFilePath = GetDefault<UAbilityEditorHelperSettings>()->JsonPath;
 
 	if (!StructType)
 	{
@@ -593,7 +599,51 @@ bool UAbilityEditorHelperLibrary::GenerateStructSchemaToPythonFolder(UScriptStru
 	}
 
 	const FString FileName = FString::Printf(TEXT("%s.schema.json"), *StructType->GetName());
-	OutJsonFilePath = FPaths::Combine(SchemaDir, FileName);
+	SchemaJsonFilePath = FPaths::Combine(SchemaDir, FileName);
 
-	return WriteStructSchemaToJson(StructType, OutJsonFilePath, OutError);
+	return WriteStructSchemaToJson(StructType, SchemaJsonFilePath, OutError);
+}
+
+bool UAbilityEditorHelperLibrary::ImportDataTableFromJsonFile(UDataTable* TargetDataTable, const FString& JsonFilePath, bool bClearBeforeImport, int32& OutImportedRowCount, FString& OutError)
+{
+	OutError.Reset();
+	OutImportedRowCount = 0;
+
+	if (!TargetDataTable)
+	{
+		OutError = TEXT("TargetDataTable 为空");
+		return false;
+	}
+
+	if (JsonFilePath.IsEmpty())
+	{
+		OutError = TEXT("JsonFilePath 为空");
+		return false;
+	}
+
+	if (!FPaths::FileExists(JsonFilePath))
+	{
+		OutError = FString::Printf(TEXT("JSON 文件不存在：%s"), *JsonFilePath);
+		return false;
+	}
+
+	// 可选：导入前清空旧数据
+	if (bClearBeforeImport)
+	{
+		TargetDataTable->EmptyTable();
+	}
+
+	// 调用引擎函数从 JSON 文件填充 DataTable
+	OutImportedRowCount = UDataTableFunctionLibrary::FillDataTableFromJSONFile(TargetDataTable, JsonFilePath);
+
+	const bool bSuccess = (OutImportedRowCount >= 0);
+
+#if WITH_EDITOR
+	if (bSuccess)
+	{
+		TargetDataTable->MarkPackageDirty();
+	}
+#endif
+
+	return bSuccess;
 }

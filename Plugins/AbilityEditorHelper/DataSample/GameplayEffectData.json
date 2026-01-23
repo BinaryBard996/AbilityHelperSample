@@ -1,0 +1,75 @@
+[
+	{
+		"Name": "Test1",
+		"DurationType": "Instant",
+		"DurationMagnitude": 0,
+		"Period": 0,
+		"StackingType": "None",
+		"StackLimitCount": 1,
+		"StackDurationRefreshPolicy": "RefreshOnSuccessfulApplication",
+		"StackPeriodResetPolicy": "ResetOnSuccessfulApplication",
+		"AssetTags":
+		{
+			"GameplayTags": [
+				{
+					"TagName": "GameplayCue.Test"
+				}
+			],
+			"ParentTags": [
+				{
+					"TagName": "GameplayCue"
+				}
+			]
+		},
+		"GrantedTags":
+		{
+			"GameplayTags": [],
+			"ParentTags": []
+		},
+		"Modifiers": [
+			{
+				"Attribute":
+				{
+					"AttributeName": "OutgoingDuration",
+					"Attribute": "/Script/GameplayAbilities.AbilitySystemComponent:OutgoingDuration",
+					"AttributeOwner": "/Script/CoreUObject.Class'/Script/GameplayAbilities.AbilitySystemComponent'"
+				},
+				"ModifierOp": "AddBase",
+				"MagnitudeCalculationType": "ScalableFloat",
+				"Magnitude": 100
+			},
+			{
+				"Attribute":
+				{
+					"AttributeName": "IncomingDuration",
+					"Attribute": "/Script/GameplayAbilities.AbilitySystemComponent:IncomingDuration",
+					"AttributeOwner": "/Script/CoreUObject.Class'/Script/GameplayAbilities.AbilitySystemComponent'"
+				},
+				"ModifierOp": "AddBase",
+				"MagnitudeCalculationType": "ScalableFloat",
+				"Magnitude": 0
+			}
+		]
+	},
+	{
+		"Name": "Test2",
+		"DurationType": "Infinite",
+		"DurationMagnitude": 0,
+		"Period": 0,
+		"StackingType": "None",
+		"StackLimitCount": 1,
+		"StackDurationRefreshPolicy": "RefreshOnSuccessfulApplication",
+		"StackPeriodResetPolicy": "ResetOnSuccessfulApplication",
+		"AssetTags":
+		{
+			"GameplayTags": [],
+			"ParentTags": []
+		},
+		"GrantedTags":
+		{
+			"GameplayTags": [],
+			"ParentTags": []
+		},
+		"Modifiers": []
+	}
+]

@@ -30,6 +30,17 @@ public:
 	TSoftObjectPtr<UDataTable> GameplayEffectDataTable;
 
 	/** 批量创建/更新 GameplayEffect 时使用的基础路径（例如：/Game/Abilities/Effects 或 Abilities/Effects） */
-	UPROPERTY(Config, EditAnywhere, Category = "GameplayEffect|Import")
+	UPROPERTY(Config, EditAnywhere, Category = "DataPath")
 	FString GameplayEffectPath;
+
+	/** Excel的数据存储路径 */
+	UPROPERTY(Config, BlueprintReadOnly, EditAnywhere, Category = "DataPath")
+	FString ExcelPath;
+
+	/** Json的数据存储路径 */
+	UPROPERTY(Config, BlueprintReadOnly, EditAnywhere, Category = "DataPath")
+	FString JsonPath;
+
+	UPROPERTY(Config, BlueprintReadOnly, EditAnywhere, Category = "DataPath")
+	FString SchemaPath;
 };

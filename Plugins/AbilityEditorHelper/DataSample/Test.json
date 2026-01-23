@@ -1,0 +1,32 @@
+[
+    {
+        "Name": "Test",
+        "DurationType": "Instant",
+        "DurationMagnitude": 0.0,
+        "Period": 0.0,
+        "StackingType": "None",
+        "StackLimitCount": 1,
+        "StackDurationRefreshPolicy": "RefreshOnSuccessfulApplication",
+        "StackPeriodResetPolicy": "ResetOnSuccessfulApplication",
+        "AssetTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "GrantedTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "Modifiers": [
+            {
+                "Attribute": {
+                    "AttributeName": "OutgoingDuration",
+                    "Attribute": "/Script/GameplayAbilities.AbilitySystemComponent:OutgoingDuration",
+                    "AttributeOwner": "/Script/CoreUObject.Class'/Script/GameplayAbilities.AbilitySystemComponent'"
+                },
+                "ModifierOp": "AddBase",
+                "MagnitudeCalculationType": "ScalableFloat",
+                "Magnitude": 1.0
+            }
+        ]
+    }
+]

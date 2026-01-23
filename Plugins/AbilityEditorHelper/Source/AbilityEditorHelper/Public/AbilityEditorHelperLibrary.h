@@ -9,6 +9,7 @@
 
 class UBlueprint;
 class UGameplayEffect;
+class UAbilityEditorHelperSettings;
 
 /**
  * 
@@ -18,6 +19,9 @@ class ABILITYEDITORHELPER_API UAbilityEditorHelperLibrary : public UBlueprintFun
 {
 	GENERATED_BODY()
 public:
+	
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper")
+	static const UAbilityEditorHelperSettings* GetAbilityEditorHelperSettings();
 
 	/**
 	 * 在指定路径和父类的基础上创建一个Blueprint资产并返回。
@@ -64,6 +68,18 @@ public:
 	 * 便捷函数：生成 Schema 到插件 Content/Python/Schema 目录，文件名 <StructName>.schema.json
 	 */
 	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|Schema")
-	static bool GenerateStructSchemaToPythonFolder(UScriptStruct* StructType, FString& OutJsonFilePath, FString& OutError);
+	static bool GenerateStructSchemaToPythonFolder(UScriptStruct* StructType, FString& OutError);
 	
+	/**
+	 * 从指定 JSON 文件导入数据到目标 DataTable。
+	 * @param TargetDataTable      目标数据表
+	 * @param JsonFilePath         JSON 文件的绝对路径
+	 * @param bClearBeforeImport   导入前是否清空现有行
+	 * @param OutImportedRowCount  成功导入的行数（由引擎返回）
+	 * @param OutError             失败时的错误信息
+	 * @return                     是否导入成功（依据引擎返回值>=0判定）
+	 */
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|DataTable", meta=(DisplayName="Import DataTable From JSON File", Keywords="DataTable Import JSON"))
+	static bool ImportDataTableFromJsonFile(UDataTable* TargetDataTable, const FString& JsonFilePath, bool bClearBeforeImport, int32& OutImportedRowCount, FString& OutError);
+
 };
