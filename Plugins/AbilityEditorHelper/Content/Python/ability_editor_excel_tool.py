@@ -1,9 +1,9 @@
 ﻿# AbilityEditorExcelTools.py
 # 工具功能：
-# 1) 生成FGameplayEffectConfig结构对应的Excel模板（支持：子表方案 或 平铺最多5项）
-# 2) 从Excel/CSV导出为可被FJsonObjectConverter反序列化为FGameplayEffectConfig的Json数组
-# 3) 若未安装openpyxl，自动回退为CSV模板/导出（子表=双CSV，平铺=单CSV）
-# 4) 新增：Schema驱动工作流（从 Schema 目录读取 <StructName>.schema.json 生成模板并导出）
+# Schema驱动工作流（从 Schema 目录读取 <StructName>.schema.json 生成模板并导出）
+# 1) 基于Schema生成Excel/CSV模板（支持嵌套结构、数组、枚举等）
+# 2) 基于Schema从Excel/CSV导出为可被FJsonObjectConverter反序列化的Json数组
+# 3) 若未安装openpyxl，自动回退为CSV模板/导出
 
 import json
 import os
@@ -22,44 +22,6 @@ try:
     UE_AVAILABLE = True
 except Exception:
     UE_AVAILABLE = False
-
-from ability_editor_consts import (
-    STRUCT_DISPLAY_NAME,
-    MAIN_SHEET_NAME,
-    SUB_SHEET_NAME,
-    MAIN_FIELDS,
-    SUB_FIELDS,
-    MAX_FLAT_MODIFIERS,
-    ENUM_HINTS,
-    SAMPLE_MAIN_ROWS,
-    SAMPLE_SUB_ROWS,
-)
-
-def _build_flat_fields():
-    flat = list(MAIN_FIELDS)
-    for i in range(1, MAX_FLAT_MODIFIERS + 1):
-        flat += [
-            f"Attribute{i}",
-            f"ModifierOp{i}",
-            f"MagnitudeCalculationType{i}",
-            f"Magnitude{i}",
-        ]
-    return flat
-
-def _build_sample_flat_row(sample_main: dict, sample_sub_for_this_name: list):
-    # 把sample子表的前N个填入平铺列
-    row = dict(sample_main)
-    for i in range(1, MAX_FLAT_MODIFIERS + 1):
-        row[f"Attribute{i}"] = ""
-        row[f"ModifierOp{i}"] = ""
-        row[f"MagnitudeCalculationType{i}"] = ""
-        row[f"Magnitude{i}"] = ""
-    for idx, sub in enumerate(sample_sub_for_this_name[:MAX_FLAT_MODIFIERS], start=1):
-        row[f"Attribute{idx}"] = sub.get("Attribute", "")
-        row[f"ModifierOp{idx}"] = sub.get("ModifierOp", "")
-        row[f"MagnitudeCalculationType{idx}"] = sub.get("MagnitudeCalculationType", "")
-        row[f"Magnitude{idx}"] = sub.get("Magnitude", "")
-    return row
 
 def _ensure_dir(path: str):
     d = os.path.dirname(path)
@@ -539,181 +501,6 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
 
     _log(f"[ExcelTools][Schema] 导出完成：{out_json_path}（共{len(result)}条）")
 
-# =========================
-# 旧版（面向固定 FGameplayEffectConfig）仍保留
-# =========================
-
-def _write_xlsx_template_sub(xlsx_path: str):
-    wb = openpyxl.Workbook()
-    # 主表
-    ws_main = wb.active
-    ws_main.title = MAIN_SHEET_NAME
-    ws_main.append(MAIN_FIELDS)
-    # 第二行写入枚举提示
-    hint_row = []
-    for f in MAIN_FIELDS:
-        hint_row.append(ENUM_HINTS.get(f, ""))
-    ws_main.append(hint_row)
-    # 示例数据
-    for row in SAMPLE_MAIN_ROWS:
-        ws_main.append([row.get(k, "") for k in MAIN_FIELDS])
-
-    # 子表
-    ws_sub = wb.create_sheet(SUB_SHEET_NAME)
-    ws_sub.append(SUB_FIELDS)
-    hint_row = []
-    for f in SUB_FIELDS:
-        hint_row.append(ENUM_HINTS.get(f, ""))
-    ws_sub.append(hint_row)
-    for row in SAMPLE_SUB_ROWS:
-        ws_sub.append([row.get(k, "") for k in SUB_FIELDS])
-
-    _ensure_dir(xlsx_path)
-    wb.save(xlsx_path)
-
-def _write_xlsx_template_flat(xlsx_path: str):
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = MAIN_SHEET_NAME
-    flat_fields = _build_flat_fields()
-    ws.append(flat_fields)
-    # 第二行提示
-    hints = []
-    for f in flat_fields:
-        if f in MAIN_FIELDS:
-            hints.append(ENUM_HINTS.get(f, ""))
-        elif f.startswith("ModifierOp"):
-            hints.append(ENUM_HINTS.get("ModifierOp", ""))
-        elif f.startswith("MagnitudeCalculationType"):
-            hints.append(ENUM_HINTS.get("MagnitudeCalculationType", ""))
-        else:
-            hints.append("")
-    ws.append(hints)
-    # 示例：将Test1的两个Modifier平铺
-    name_to_sub = {}
-    for s in SAMPLE_SUB_ROWS:
-        name_to_sub.setdefault(s["ParentName"], []).append(s)
-    for main in SAMPLE_MAIN_ROWS:
-        subs = name_to_sub.get(main["Name"], [])
-        row = _build_sample_flat_row(main, subs)
-        ws.append([row.get(k, "") for k in flat_fields])
-
-    _ensure_dir(xlsx_path)
-    wb.save(xlsx_path)
-
-def _write_csv_template_sub(csv_main_path: str, csv_sub_path: str):
-    import csv
-    _ensure_dir(csv_main_path)
-    _ensure_dir(csv_sub_path)
-    with open(csv_main_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(MAIN_FIELDS)
-        w.writerow([ENUM_HINTS.get(x, "") for x in MAIN_FIELDS])
-        for row in SAMPLE_MAIN_ROWS:
-            w.writerow([row.get(k, "") for k in MAIN_FIELDS])
-
-    with open(csv_sub_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(SUB_FIELDS)
-        w.writerow([ENUM_HINTS.get(x, "") for x in SUB_FIELDS])
-        for row in SAMPLE_SUB_ROWS:
-            w.writerow([row.get(k, "") for k in SUB_FIELDS])
-
-def _write_csv_template_flat(csv_flat_path: str):
-    import csv
-    _ensure_dir(csv_flat_path)
-    flat_fields = _build_flat_fields()
-    with open(csv_flat_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(flat_fields)
-        hints = []
-        for f in flat_fields:
-            if f in MAIN_FIELDS:
-                hints.append(ENUM_HINTS.get(f, ""))
-            elif f.startswith("ModifierOp"):
-                hints.append(ENUM_HINTS.get("ModifierOp", ""))
-            elif f.startswith("MagnitudeCalculationType"):
-                hints.append(ENUM_HINTS.get("MagnitudeCalculationType", ""))
-            else:
-                hints.append("")
-        w.writerow(hints)
-        name_to_sub = {}
-        for s in SAMPLE_SUB_ROWS:
-            name_to_sub.setdefault(s["ParentName"], []).append(s)
-        for main in SAMPLE_MAIN_ROWS:
-            subs = name_to_sub.get(main["Name"], [])
-            row = _build_sample_flat_row(main, subs)
-            w.writerow([row.get(k, "") for k in flat_fields])
-
-def generate_gameplay_effect_excel_template(out_path: str, use_sub_sheet: bool = True):
-    """
-    生成FGameplayEffectConfig的Excel模板。
-    - use_sub_sheet=True：子表方案（Modifiers独立Sheet或双CSV）
-    - use_sub_sheet=False：平铺方案（单Sheet或单CSV，最多5项）
-    out_path:
-      - 若以 .xlsx 结尾且安装openpyxl，则生成一个xlsx；
-      - 否则：
-        - 子表方案：生成 GameplayEffectData_Main.csv 与 GameplayEffectData_Modifiers.csv；
-        - 平铺方案：生成 GameplayEffectData_Flat.csv。
-    """
-    if out_path.lower().endswith(".xlsx") and OPENPYXL_AVAILABLE:
-        if use_sub_sheet:
-            _write_xlsx_template_sub(out_path)
-        else:
-            _write_xlsx_template_flat(out_path)
-        msg = f"[ExcelTools] 模板已生成：{out_path}（{'子表' if use_sub_sheet else '平铺'}）"
-    else:
-        base_dir = out_path
-        if out_path.lower().endswith(".xlsx"):
-            base_dir = os.path.dirname(out_path)
-        if use_sub_sheet:
-            csv_main = os.path.join(base_dir, "GameplayEffectData_Main.csv")
-            csv_sub = os.path.join(base_dir, "GameplayEffectData_Modifiers.csv")
-            _write_csv_template_sub(csv_main, csv_sub)
-            msg = f"[ExcelTools] 未检测到openpyxl，已生成CSV模板（子表）：\n  {csv_main}\n  {csv_sub}"
-        else:
-            csv_flat = os.path.join(base_dir, "GameplayEffectData_Flat.csv")
-            _write_csv_template_flat(csv_flat)
-            msg = f"[ExcelTools] 未检测到openpyxl，已生成CSV模板（平铺）：\n  {csv_flat}"
-    if UE_AVAILABLE:
-        unreal.log(msg)
-    else:
-        print(msg)
-
-def _read_xlsx_both(xlsx_path: str):
-    wb = openpyxl.load_workbook(xlsx_path, data_only=True)
-    is_sub = SUB_SHEET_NAME in wb.sheetnames
-    ws_main = wb[MAIN_SHEET_NAME]
-    main_rows = _sheet_to_dict_list(ws_main, skip_second_row_hint=True)
-    if is_sub:
-        ws_sub = wb[SUB_SHEET_NAME]
-        sub_rows = _sheet_to_dict_list(ws_sub, skip_second_row_hint=True)
-        return main_rows, sub_rows, "sub"
-    else:
-        return main_rows, None, "flat"
-
-def _read_csv(csv_path: str):
-    import csv
-    rows = []
-    with open(csv_path, "r", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        headers = None
-        for i, line in enumerate(reader):
-            if i == 0:
-                headers = [x.strip() for x in line]
-                continue
-            # 跳过第二行枚举提示
-            if i == 1:
-                continue
-            if not any((x or "").strip() for x in line):
-                continue
-            row = {}
-            for idx, v in enumerate(line):
-                key = headers[idx] if idx < len(headers) else f"COL_{idx}"
-                row[key] = v
-            rows.append(row)
-    return rows
-
 def _split_tag_string(s) -> list:
     if not s:
         return []
@@ -796,172 +583,10 @@ def _safe_str(v, default=""):
         return default
     return str(v).strip()
 
-def _collect_modifiers_from_flat_row(row: dict):
-    mods = []
-    for i in range(1, MAX_FLAT_MODIFIERS + 1):
-        attr_cell = _safe_str(row.get(f"Attribute{i}"))
-        if not attr_cell:
-            continue
-        attr_obj = _parse_attribute_cell(attr_cell)
-        mods.append({
-            "Attribute": attr_obj,
-            "ModifierOp": _safe_str(row.get(f"ModifierOp{i}"), "AddBase"),
-            "MagnitudeCalculationType": _safe_str(row.get(f"MagnitudeCalculationType{i}"), "ScalableFloat"),
-            "Magnitude": _safe_num(row.get(f"Magnitude{i}"), 0),
-        })
-    return mods
-
-def export_gameplay_effect_excel_to_json(in_path: str, out_json_path: str):
-    """
-    从Excel/CSV导出Json数组（GameplayEffectData）。
-    支持：
-      - .xlsx（需安装openpyxl，子表或平铺）
-      - CSV：
-         - 子表方案：GameplayEffectData_Main.csv + GameplayEffectData_Modifiers.csv
-         - 平铺方案：GameplayEffectData_Flat.csv
-    """
-    scheme = None
-    if in_path.lower().endswith(".xlsx"):
-        if not OPENPYXL_AVAILABLE:
-            raise RuntimeError("未安装openpyxl，无法读取xlsx。请安装后重试，或使用CSV回退。")
-        main_rows, sub_rows, scheme = _read_xlsx_both(in_path)
-    else:
-        # 作为目录或任一csv路径输入时，尝试识别
-        base_dir = in_path
-        if in_path.lower().endswith(".csv"):
-            base_dir = os.path.dirname(in_path)
-        csv_main = os.path.join(base_dir, "GameplayEffectData_Main.csv")
-        csv_sub  = os.path.join(base_dir, "GameplayEffectData_Modifiers.csv")
-        csv_flat = os.path.join(base_dir, "GameplayEffectData_Flat.csv")
-        if os.path.exists(csv_main) and os.path.exists(csv_sub):
-            main_rows = _read_csv(csv_main)
-            sub_rows  = _read_csv(csv_sub)
-            scheme = "sub"
-        elif os.path.exists(csv_flat):
-            main_rows = _read_csv(csv_flat)
-            sub_rows  = None
-            scheme = "flat"
-        else:
-            raise FileNotFoundError(f"未找到CSV（子表：{csv_main}+{csv_sub}，或平铺：{csv_flat}）")
-    # 组装
-    result = []
-    if scheme == "sub":
-        # 组装子表：ParentName -> list
-        modifiers_map = {}
-        for r in sub_rows or []:
-            parent = _safe_str(r.get("ParentName"))
-            if not parent:
-                continue
-            modifiers_map.setdefault(parent, []).append(r)
-
-        for r in main_rows:
-            name = _safe_str(r.get("Name"))
-            if not name or name == "Name":
-                continue
-
-            asset_tags = _split_tag_string(r.get("AssetTags"))
-            granted_tags = _split_tag_string(r.get("GrantedTags"))
-
-            item = {
-                "Name": name,
-                "DurationType": _safe_str(r.get("DurationType"), "Instant"),
-                "DurationMagnitude": _safe_num(r.get("DurationMagnitude"), 0),
-                "Period": _safe_num(r.get("Period"), 0),
-                "StackingType": _safe_str(r.get("StackingType"), "None"),
-                "StackLimitCount": _safe_num(r.get("StackLimitCount"), 1),
-                "StackDurationRefreshPolicy": _safe_str(r.get("StackDurationRefreshPolicy"),
-                                                       "RefreshOnSuccessfulApplication"),
-                "StackPeriodResetPolicy": _safe_str(r.get("StackPeriodResetPolicy"),
-                                                    "ResetOnSuccessfulApplication"),
-                "AssetTags": _to_tag_container_obj(asset_tags),
-                "GrantedTags": _to_tag_container_obj(granted_tags),
-                "Modifiers": []
-            }
-            for m in (modifiers_map.get(name, []) or []):
-                attr_cell = _safe_str(m.get("Attribute"))
-                if not attr_cell:
-                    continue
-                attr_obj = _parse_attribute_cell(attr_cell)
-                modifier = {
-                    "Attribute": attr_obj,
-                    "ModifierOp": _safe_str(m.get("ModifierOp"), "AddBase"),
-                    "MagnitudeCalculationType": _safe_str(m.get("MagnitudeCalculationType"), "ScalableFloat"),
-                    "Magnitude": _safe_num(m.get("Magnitude"), 0),
-                }
-                item["Modifiers"].append(modifier)
-            result.append(item)
-
-    elif scheme == "flat":
-        flat_fields = set(_build_flat_fields())
-        for r in main_rows:
-            name = _safe_str(r.get("Name"))
-            if not name or name == "Name":
-                continue
-            asset_tags = _split_tag_string(r.get("AssetTags"))
-            granted_tags = _split_tag_string(r.get("GrantedTags"))
-
-            item = {
-                "Name": name,
-                "DurationType": _safe_str(r.get("DurationType"), "Instant"),
-                "DurationMagnitude": _safe_num(r.get("DurationMagnitude"), 0),
-                "Period": _safe_num(r.get("Period"), 0),
-                "StackingType": _safe_str(r.get("StackingType"), "None"),
-                "StackLimitCount": _safe_num(r.get("StackLimitCount"), 1),
-                "StackDurationRefreshPolicy": _safe_str(r.get("StackDurationRefreshPolicy"),
-                                                       "RefreshOnSuccessfulApplication"),
-                "StackPeriodResetPolicy": _safe_str(r.get("StackPeriodResetPolicy"),
-                                                    "ResetOnSuccessfulApplication"),
-                "AssetTags": _to_tag_container_obj(asset_tags),
-                "GrantedTags": _to_tag_container_obj(granted_tags),
-                "Modifiers": _collect_modifiers_from_flat_row(r),
-            }
-            # 兼容：忽略未知/非模板列
-            # （此处无需额外处理，_collect_modifiers_from_flat_row已使用约定列）
-            result.append(item)
-    else:
-        raise RuntimeError("无法识别的表格方案。")
-
-    _ensure_dir(out_json_path)
-    with open(out_json_path, "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=4)
-
-    msg = f"[ExcelTools] 导出完成：{out_json_path}（{scheme}，共{len(result)}条）"
-    if UE_AVAILABLE:
-        unreal.log(msg)
-    else:
-        print(msg)
-
-# 便捷函数：默认路径
-def quick_generate_template_to_samples(use_sub_sheet: bool = True):
-    """
-    在脚本同目录生成模板（演示用）
-    """
-    here = os.path.dirname(os.path.abspath(__file__))
-    if OPENPYXL_AVAILABLE:
-        out_path = os.path.join(here, "GameplayEffectData.xlsx")
-    else:
-        out_path = os.path.join(here, "GameplayEffectData_Flat.csv" if not use_sub_sheet else "GameplayEffectData_Main.csv")
-    generate_gameplay_effect_excel_template(out_path, use_sub_sheet=use_sub_sheet)
-    return out_path
-
-def quick_export_from_template():
-    """
-    默认从与脚本同目录的模板导出到插件DataSample/GameplayEffectData.json（演示用）
-    """
-    here = os.path.dirname(os.path.abspath(__file__))
-    # 输入：xlsx优先，否则csv目录
-    xlsx = os.path.join(here, "GameplayEffectData.xlsx")
-    in_path = xlsx if os.path.exists(xlsx) else here
-    out_json = os.path.join(os.path.dirname(here), "DataSample", "GameplayEffectData.json")
-    export_gameplay_effect_excel_to_json(in_path, out_json)
-    return out_json
-
 if __name__ == "__main__":
     # 命令行用法（在外部Python环境下也可调试）
     # 1) Schema 模板：python ability_editor_excel_tool.py schema_template <schema> <输出路径/目录> [--schema-dir DIR]
     # 2) Schema 导出：python ability_editor_excel_tool.py schema_export <schema> <输入xlsx|csv> <输出json> [--schema-dir DIR]
-    # 3) 固定模板：python ability_editor_excel_tool.py template <输出路径> [--use-sub-sheet true|false]
-    # 4) 固定导出：python ability_editor_excel_tool.py export <输入xlsx或csv目录> <输出json路径>
     import argparse
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="cmd")
@@ -977,15 +602,6 @@ if __name__ == "__main__":
     p00.add_argument("out", help="输出.json路径")
     p00.add_argument("--schema-dir", default="", help="Schema目录（默认插件Content/Python/Schema）")
 
-    p1 = sub.add_parser("template")
-    p1.add_argument("out", help="输出.xlsx路径（无openpyxl时忽略为CSV）")
-    p1.add_argument("--use-sub-sheet", default="true",
-                    help="是否使用子表方案（true/false，默认true）")
-
-    p2 = sub.add_parser("export")
-    p2.add_argument("inp", help=".xlsx文件路径 或 CSV目录路径")
-    p2.add_argument("out", help="输出.json路径")
-
     args = parser.parse_args()
     if args.cmd == "schema_template":
         sd = args.schema_dir.strip() or None
@@ -993,15 +609,7 @@ if __name__ == "__main__":
     elif args.cmd == "schema_export":
         sd = args.schema_dir.strip() or None
         export_excel_to_json_using_schema(args.inp, args.out, args.schema, schema_dir=sd)
-    elif args.cmd == "template":
-        val = str(args.use_sub_sheet).strip().lower()
-        use_sub = val in ("1", "true", "yes", "y", "t")
-        generate_gameplay_effect_excel_template(args.out, use_sub_sheet=use_sub)
-    elif args.cmd == "export":
-        export_gameplay_effect_excel_to_json(args.inp, args.out)
     else:
         print("用法：\n"
               "  schema_template <schema_name|schema_path> <out.xlsx|out_dir> [--schema-dir <dir>]\n"
-              "  schema_export   <schema_name|schema_path> <in.xlsx|csv_dir> <out.json> [--schema-dir <dir>]\n"
-              "  template <out.xlsx> [--use-sub-sheet true|false]\n"
-              "  export <in.xlsx|csv_dir> <out.json>")
+              "  schema_export   <schema_name|schema_path> <in.xlsx|csv_dir> <out.json> [--schema-dir <dir>]")
