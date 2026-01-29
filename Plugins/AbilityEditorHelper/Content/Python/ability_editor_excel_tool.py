@@ -307,6 +307,8 @@ def _to_scalar_from_cell(schema: dict, field: dict, value):
         if rule == "attribute_rule":
             s = _safe_str(value, "")
             return _parse_attribute_cell(s) if s else {}
+        if rule == "tag_requirements_rule":
+            return _parse_tag_requirements(value)
         # 通用struct：允许用户直接填一个JSON对象字符串
         s = _safe_str(value, "")
         if s.startswith("{") and s.endswith("}"):
@@ -564,6 +566,67 @@ def _parse_attribute_cell(cell_value: str) -> dict:
         "Attribute": f"{class_path}:{prop_name}",
         "AttributeOwner": owner_obj
     }
+
+def _parse_tag_requirements(cell_value) -> dict:
+    """
+    解析 Tag Requirements 的行内格式
+    格式：  "Require:Tag.A,Tag.B|Ignore:Tag.C,Tag.D"
+    输出：
+      {
+        "RequireTags": {"GameplayTags": [...], "ParentTags": [...]},
+        "IgnoreTags": {"GameplayTags": [...], "ParentTags": [...]}
+      }
+    """
+    s = _safe_str(cell_value, "")
+    if not s:
+        return {
+            "RequireTags": _to_tag_container_obj([]),
+            "IgnoreTags": _to_tag_container_obj([])
+        }
+
+    require = []
+    ignore = []
+
+    if "|" in s:
+        parts = s.split("|")
+        for part in parts:
+            part = part.strip()
+            if part.startswith("Require:"):
+                require = _split_tag_string(part[8:])
+            elif part.startswith("Ignore:"):
+                ignore = _split_tag_string(part[7:])
+    else:
+        # 回退：将整个字符串视为 RequireTags
+        require = _split_tag_string(s)
+
+    return {
+        "RequireTags": _to_tag_container_obj(require),
+        "IgnoreTags": _to_tag_container_obj(ignore)
+    }
+
+def _parse_asset_path(cell_value) -> str:
+    """
+    规范化 UE 资产路径
+    接受：
+      - 完整路径：/Game/Effects/GE_Base.GE_Base
+      - 包路径：/Game/Effects/GE_Base
+      - 相对路径：Effects/GE_Base
+    返回：规范化的资产路径字符串
+    """
+    s = _safe_str(cell_value, "")
+    if not s:
+        return ""
+
+    # 如果不以 / 开头，规范化为 /Game/
+    if not s.startswith("/"):
+        s = "/Game/" + s
+
+    # 如果只是包路径（没有 .），添加资产名称
+    if "." not in s:
+        asset_name = s.split("/")[-1]
+        s = f"{s}.{asset_name}"
+
+    return s
 
 def _safe_num(v, default=0):
     if v is None or v == "":

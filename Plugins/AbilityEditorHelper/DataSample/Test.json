@@ -1,11 +1,12 @@
 [
     {
-        "Name": "Test",
+        "Name": "Test1",
+        "ParentClass": "",
         "DurationType": "Instant",
         "DurationMagnitude": 0.0,
         "Period": 0.0,
         "StackingType": "None",
-        "StackLimitCount": 1,
+        "StackLimitCount": 0,
         "StackDurationRefreshPolicy": "RefreshOnSuccessfulApplication",
         "StackPeriodResetPolicy": "ResetOnSuccessfulApplication",
         "AssetTags": {
@@ -16,17 +17,48 @@
             "GameplayTags": [],
             "ParentTags": []
         },
-        "Modifiers": [
-            {
-                "Attribute": {
-                    "AttributeName": "OutgoingDuration",
-                    "Attribute": "/Script/GameplayAbilities.AbilitySystemComponent:OutgoingDuration",
-                    "AttributeOwner": "/Script/CoreUObject.Class'/Script/GameplayAbilities.AbilitySystemComponent'"
-                },
-                "ModifierOp": "AddBase",
-                "MagnitudeCalculationType": "ScalableFloat",
-                "Magnitude": 1.0
+        "ApplicationTagRequirements": {
+            "RequireTags": {
+                "GameplayTags": [],
+                "ParentTags": []
+            },
+            "IgnoreTags": {
+                "GameplayTags": [],
+                "ParentTags": []
             }
-        ]
+        },
+        "OngoingTagRequirements": {
+            "RequireTags": {
+                "GameplayTags": [],
+                "ParentTags": []
+            },
+            "IgnoreTags": {
+                "GameplayTags": [],
+                "ParentTags": []
+            }
+        },
+        "RemovalTagRequirements": {
+            "RequireTags": {
+                "GameplayTags": [],
+                "ParentTags": []
+            },
+            "IgnoreTags": {
+                "GameplayTags": [],
+                "ParentTags": []
+            }
+        },
+        "CancelAbilitiesWithTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "BlockAbilitiesWithTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "Modifiers": [],
+        "GameplayCues": [],
+        "ImmunityQueries": [],
+        "RemovalQueries": [],
+        "Executions": []
     }
 ]

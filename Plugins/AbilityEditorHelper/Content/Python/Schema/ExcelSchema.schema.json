@@ -1,0 +1,82 @@
+{
+	"structPath": "/Script/AbilityEditorHelper.ExcelSchema",
+	"hash": "75a1f51a2c7436d5ecbe8c618aabfea6",
+	"fields": [
+		{
+			"name": "StructPath",
+			"category": "AbilityEditorHelper|Schema",
+			"kind": "string",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "Hash",
+			"category": "AbilityEditorHelper|Schema",
+			"kind": "string",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "Fields",
+			"category": "AbilityEditorHelper|Schema",
+			"kind": "array",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "",
+			"innerKind": "struct",
+			"innerStructPath": "/Script/AbilityEditorHelper.ExcelSchemaField",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "SpecialRules",
+			"category": "AbilityEditorHelper|Schema",
+			"kind": "unknown",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		}
+	],
+	"specialRules":
+	{
+		"GameplayTagContainer": "tag_container_rule",
+		"GameplayAttribute": "attribute_rule",
+		"TagRequirementsConfig": "tag_requirements_rule",
+		"SoftClassPath": "asset_path_rule",
+		"SoftObjectPath": "asset_path_rule"
+	}
+}

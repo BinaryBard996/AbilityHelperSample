@@ -1,0 +1,48 @@
+{
+	"structPath": "/Script/AbilityEditorHelper.TagRequirementsConfig",
+	"hash": "3933e750a722c1e3f9a0afd2d04c4bf8",
+	"fields": [
+		{
+			"name": "RequireTags",
+			"category": "TagRequirements",
+			"kind": "struct",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "/Script/GameplayTags.GameplayTagContainer",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "IgnoreTags",
+			"category": "TagRequirements",
+			"kind": "struct",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "/Script/GameplayTags.GameplayTagContainer",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		}
+	],
+	"specialRules":
+	{
+		"GameplayTagContainer": "tag_container_rule",
+		"GameplayAttribute": "attribute_rule",
+		"TagRequirementsConfig": "tag_requirements_rule",
+		"SoftClassPath": "asset_path_rule",
+		"SoftObjectPath": "asset_path_rule"
+	}
+}

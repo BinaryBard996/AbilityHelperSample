@@ -69,7 +69,25 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|Schema")
 	static bool GenerateStructSchemaToPythonFolder(UScriptStruct* StructType, FString& OutError);
-	
+
+	/**
+	 * 批量生成 Schema：根据 UAbilityEditorHelperSettings 中配置的结构体列表，批量导出所有 Schema 到 Python/Schema 目录
+	 * @param OutSuccessCount  成功导出的结构体数量
+	 * @param OutFailureCount  导出失败的结构体数量
+	 * @param OutErrors        所有失败的错误信息（每行一个错误）
+	 * @return                 是否全部成功
+	 */
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|Schema")
+	static bool GenerateAllSchemasFromSettings(int32& OutSuccessCount, int32& OutFailureCount, FString& OutErrors);
+
+	/**
+	 * 从结构体路径字符串加载 UScriptStruct
+	 * @param StructPath  结构体路径（格式：/Script/ModuleName.StructName）
+	 * @return            加载的结构体指针，失败返回 nullptr
+	 */
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|Schema")
+	static UScriptStruct* LoadStructFromPath(const FString& StructPath);
+
 	/**
 	 * 从指定 JSON 文件导入数据到目标 DataTable。
 	 * @param TargetDataTable      目标数据表

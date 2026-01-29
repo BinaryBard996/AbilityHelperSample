@@ -1,0 +1,104 @@
+{
+	"structPath": "/Script/AbilityEditorHelper.AttributeBasedModifierConfig",
+	"hash": "c1ab874ee6356cd6f6e00e515c6bacda",
+	"fields": [
+		{
+			"name": "BackingAttribute",
+			"category": "AttributeBased",
+			"kind": "struct",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "/Script/GameplayAbilities.GameplayAttribute",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "AttributeCalculationType",
+			"category": "AttributeBased",
+			"kind": "enum",
+			"enumPath": "/Script/GameplayAbilities.EAttributeBasedFloatCalculationType",
+			"enumValues": [
+				"AttributeMagnitude",
+				"AttributeBaseValue",
+				"AttributeBonusMagnitude",
+				"AttributeMagnitudeEvaluatedUpToChannel"
+			],
+			"structPath": "",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "Coefficient",
+			"category": "AttributeBased",
+			"kind": "float",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "PreMultiplyAdditiveValue",
+			"category": "AttributeBased",
+			"kind": "float",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "PostMultiplyAdditiveValue",
+			"category": "AttributeBased",
+			"kind": "float",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		}
+	],
+	"specialRules":
+	{
+		"GameplayTagContainer": "tag_container_rule",
+		"GameplayAttribute": "attribute_rule",
+		"TagRequirementsConfig": "tag_requirements_rule",
+		"SoftClassPath": "asset_path_rule",
+		"SoftObjectPath": "asset_path_rule"
+	}
+}

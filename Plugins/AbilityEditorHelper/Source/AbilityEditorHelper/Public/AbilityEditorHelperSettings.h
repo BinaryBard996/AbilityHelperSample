@@ -43,4 +43,12 @@ public:
 
 	UPROPERTY(Config, BlueprintReadOnly, EditAnywhere, Category = "DataPath")
 	FString SchemaPath;
+
+	/**
+	 * 需要自动导出 Schema 的结构体类型路径列表
+	 * 格式：/Script/ModuleName.StructName
+	 * 例如：/Script/AbilityEditorHelper.GameplayEffectConfig
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Schema")
+	TArray<FString> StructTypePathsToExportSchema;
 };

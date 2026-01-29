@@ -1,6 +1,6 @@
 {
 	"structPath": "/Script/AbilityEditorHelper.GEModifierConfig",
-	"hash": "7b1e77be1202c104c1491bd0497f270d",
+	"hash": "e5cc90e97849fc8e6d226707db66d69c",
 	"fields": [
 		{
 			"name": "Attribute",
@@ -85,11 +85,99 @@
 			"excelHint": "",
 			"excelSheet": "",
 			"excelSeparator": ""
+		},
+		{
+			"name": "AttributeBasedConfig",
+			"category": "Modifier",
+			"kind": "struct",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "/Script/AbilityEditorHelper.AttributeBasedModifierConfig",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "SetByCallerConfig",
+			"category": "Modifier",
+			"kind": "struct",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "/Script/AbilityEditorHelper.SetByCallerModifierConfig",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "CustomCalculationClass",
+			"category": "Modifier",
+			"kind": "string",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "Asset path to calculation class",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "SourceTagRequirements",
+			"category": "Modifier",
+			"kind": "struct",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "/Script/AbilityEditorHelper.TagRequirementsConfig",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "TargetTagRequirements",
+			"category": "Modifier",
+			"kind": "struct",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "/Script/AbilityEditorHelper.TagRequirementsConfig",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
 		}
 	],
 	"specialRules":
 	{
 		"GameplayTagContainer": "tag_container_rule",
-		"GameplayAttribute": "attribute_rule"
+		"GameplayAttribute": "attribute_rule",
+		"TagRequirementsConfig": "tag_requirements_rule",
+		"SoftClassPath": "asset_path_rule",
+		"SoftObjectPath": "asset_path_rule"
 	}
 }

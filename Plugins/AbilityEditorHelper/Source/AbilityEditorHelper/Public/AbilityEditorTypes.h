@@ -91,30 +91,184 @@ struct FExcelSchema
 };
 
 /**
+ * Tag 需求配置（用于表示 MustHaveTags/MustNotHaveTags）
+ */
+USTRUCT(BlueprintType)
+struct FTagRequirementsConfig
+{
+	GENERATED_BODY()
+
+	// 必须拥有的 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TagRequirements")
+	FGameplayTagContainer RequireTags;
+
+	// 必须不拥有的 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TagRequirements")
+	FGameplayTagContainer IgnoreTags;
+};
+
+/**
+ * AttributeBased 修改器配置
+ */
+USTRUCT(BlueprintType)
+struct FAttributeBasedModifierConfig
+{
+	GENERATED_BODY()
+
+	// 后备属性（Backing Attribute）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AttributeBased")
+	FGameplayAttribute BackingAttribute;
+
+	// 属性计算类型
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AttributeBased")
+	EAttributeBasedFloatCalculationType AttributeCalculationType = EAttributeBasedFloatCalculationType::AttributeMagnitude;
+
+	// 系数
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AttributeBased")
+	float Coefficient = 1.0f;
+
+	// 乘法前的加法值
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AttributeBased")
+	float PreMultiplyAdditiveValue = 0.0f;
+
+	// 乘法后的加法值
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AttributeBased")
+	float PostMultiplyAdditiveValue = 0.0f;
+};
+
+/**
+ * SetByCaller 修改器配置
+ */
+USTRUCT(BlueprintType)
+struct FSetByCallerModifierConfig
+{
+	GENERATED_BODY()
+
+	// 数据 Tag（用于运行时查找）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SetByCaller")
+	FGameplayTag DataTag;
+
+	// 数据名称（用于运行时查找）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SetByCaller")
+	FName DataName;
+};
+
+/**
+ * GameplayCue 配置
+ */
+USTRUCT(BlueprintType)
+struct FGameplayCueConfig
+{
+	GENERATED_BODY()
+
+	// GameplayCue Tag
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayCue")
+	FGameplayTag GameplayCueTag;
+
+	// 最小等级
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayCue")
+	float MinLevel = 0.0f;
+
+	// 最大等级
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayCue")
+	float MaxLevel = 0.0f;
+};
+
+/**
+ * 效果查询配置（用于 Immunity 和 Removal）
+ */
+USTRUCT(BlueprintType)
+struct FEffectQueryConfig
+{
+	GENERATED_BODY()
+
+	// 匹配任意拥有的 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Query")
+	FGameplayTagContainer MatchAnyOwningTags;
+
+	// 匹配所有拥有的 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Query")
+	FGameplayTagContainer MatchAllOwningTags;
+
+	// 不匹配拥有的 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Query")
+	FGameplayTagContainer MatchNoOwningTags;
+
+	// 匹配任意来源 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Query")
+	FGameplayTagContainer MatchAnySourceTags;
+
+	// 匹配所有来源 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Query")
+	FGameplayTagContainer MatchAllSourceTags;
+
+	// 不匹配来源 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Query")
+	FGameplayTagContainer MatchNoSourceTags;
+};
+
+/**
+ * Execution 配置（最小支持）
+ */
+USTRUCT(BlueprintType)
+struct FExecutionConfig
+{
+	GENERATED_BODY()
+
+	// Execution 计算类 (Asset path)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Execution",
+		meta = (ExcelHint = "Asset path to execution calculation class"))
+	FString CalculationClass;
+
+	// 传递的 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Execution")
+	FGameplayTagContainer PassedInTags;
+};
+
+/**
  * GE 修改器配置（用于修改Attribute）
- * TODO. 目前只实现最简单的一版
  */
 USTRUCT(BlueprintType)
 struct FGEModifierConfig
 {
 	GENERATED_BODY()
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier")
 	FGameplayAttribute Attribute;
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier")
 	TEnumAsByte<EGameplayModOp::Type> ModifierOp = EGameplayModOp::Additive;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier")
 	EGameplayEffectMagnitudeCalculation MagnitudeCalculationType = EGameplayEffectMagnitudeCalculation::ScalableFloat;
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier")
 	float Magnitude;
+
+	// === 增强功能：AttributeBased 计算配置 ===
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier")
+	FAttributeBasedModifierConfig AttributeBasedConfig;
+
+	// === 增强功能：SetByCaller 配置 ===
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier")
+	FSetByCallerModifierConfig SetByCallerConfig;
+
+	// === 增强功能：自定义计算类 ===
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier",
+		meta = (ExcelHint = "Asset path to calculation class"))
+	FString CustomCalculationClass;
+
+	// === 增强功能：Source Tag 需求 ===
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier")
+	FTagRequirementsConfig SourceTagRequirements;
+
+	// === 增强功能：Target Tag 需求 ===
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier")
+	FTagRequirementsConfig TargetTagRequirements;
 };
 
 /**
  * 完整的 GE 配置数据（DataTable 行结构）
- * TODO. 目前只实现最简单的一版
  */
 USTRUCT(BlueprintType)
 struct FGameplayEffectConfig : public FTableRowBase
@@ -122,7 +276,12 @@ struct FGameplayEffectConfig : public FTableRowBase
 	GENERATED_BODY()
 
 	// === 基础配置 ===
-	
+
+	// 父类（可选，用于继承默认值）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic",
+		meta = (ExcelHint = "Asset path: /Game/Effects/GE_Base"))
+	FString ParentClass;
+
 	// GE 的持续类型（Instant, Duration, Infinite, HasDuration）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic")
 	EGameplayEffectDurationType DurationType = EGameplayEffectDurationType::Instant;
@@ -132,13 +291,11 @@ struct FGameplayEffectConfig : public FTableRowBase
 	float DurationMagnitude = 0.f;
 
 	// 执行周期（Period, 0 表示不周期执行）
-
-	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic")
 	float Period = 0.f;
 
 	// === 堆叠配置 ===
-	
+
 	// 堆叠类型（None, AggregateBySource, AggregateByTarget）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stacking")
 	EGameplayEffectStackingType StackingType = EGameplayEffectStackingType::None;
@@ -160,15 +317,68 @@ struct FGameplayEffectConfig : public FTableRowBase
 	// GE 自身的 Tags
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
 	FGameplayTagContainer AssetTags;
-	
+
 	// GE 在激活期间赋予目标 Tags
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
 	FGameplayTagContainer GrantedTags;
 
+	// === Tag 需求配置 ===
+
+	// 应用时的 Tag 需求（RequireTagsToApply）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Application")
+	FTagRequirementsConfig ApplicationTagRequirements;
+
+	// 持续期间的 Tag 需求（RequireTagsToContinue）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Application")
+	FTagRequirementsConfig OngoingTagRequirements;
+
+	// 移除时的 Tag 需求
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Application")
+	FTagRequirementsConfig RemovalTagRequirements;
+
+	// === 阻断/取消配置 ===
+
+	// 取消拥有这些 Tags 的 Abilities
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
+	FGameplayTagContainer CancelAbilitiesWithTags;
+
+	// 阻断拥有这些 Tags 的 Abilities
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
+	FGameplayTagContainer BlockAbilitiesWithTags;
+
+	// === 授予的 Abilities ===
+
+	// 授予的 Ability 类列表（逗号分隔的资产路径）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Abilities",
+		meta = (ExcelHint = "Comma-separated asset paths", ExcelSeparator = ","))
+	TArray<FString> GrantedAbilityClasses;
+
 	// === 修改器配置 ===
-	
+
 	// Attribute 修改器列表
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifiers")
 	TArray<FGEModifierConfig> Modifiers;
-	
+
+	// === GameplayCues 配置 ===
+
+	// GameplayCue 列表
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayCues")
+	TArray<FGameplayCueConfig> GameplayCues;
+
+	// === 效果查询配置 ===
+
+	// 免疫查询列表
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Immunity")
+	TArray<FEffectQueryConfig> ImmunityQueries;
+
+	// 移除效果查询列表
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Removal")
+	TArray<FEffectQueryConfig> RemovalQueries;
+
+	// === Executions 配置 ===
+
+	// Execution 列表
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Executions")
+	TArray<FExecutionConfig> Executions;
+
 };
