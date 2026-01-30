@@ -10,12 +10,37 @@
         "StackDurationRefreshPolicy": "RefreshOnSuccessfulApplication",
         "StackPeriodResetPolicy": "ResetOnSuccessfulApplication",
         "AssetTags": {
-            "GameplayTags": [],
-            "ParentTags": []
+            "GameplayTags": [
+                {
+                    "TagName": "Tests.GenericTag.One"
+                }
+            ],
+            "ParentTags": [
+                {
+                    "TagName": "Tests"
+                },
+                {
+                    "TagName": "Tests.GenericTag"
+                }
+            ]
         },
         "GrantedTags": {
-            "GameplayTags": [],
-            "ParentTags": []
+            "GameplayTags": [
+                {
+                    "TagName": "Tests.GenericTag.One"
+                },
+                {
+                    "TagName": "Tests.GenericTag.Two"
+                }
+            ],
+            "ParentTags": [
+                {
+                    "TagName": "Tests"
+                },
+                {
+                    "TagName": "Tests.GenericTag"
+                }
+            ]
         },
         "ApplicationTagRequirements": {
             "RequireTags": {

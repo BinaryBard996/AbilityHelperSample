@@ -98,6 +98,13 @@ def _excel_col_name(field: dict) -> str:
         return n
     return str(field.get("name") or "").strip()
 
+def _is_primitive_array(field: dict) -> bool:
+    """判断是否是基本类型数组（非 struct 数组）"""
+    if (field.get("kind") or "").strip() != "array":
+        return False
+    inner_kind = (field.get("innerKind") or "").strip()
+    return inner_kind != "struct"
+
 def _field_hint(schema: dict, field: dict) -> str:
     # 优先 ExcelHint；枚举则提示 enumValues；特殊类型给约定提示
     if field.get("bExcelIgnore"):
@@ -121,6 +128,15 @@ def _field_hint(schema: dict, field: dict) -> str:
         if rule == "attribute_rule":
             return "格式：/Script/Module.Class:Property"
 
+    # 基本类型数组提示
+    if kind == "array":
+        inner_kind = (field.get("innerKind") or "").strip()
+        if inner_kind != "struct":
+            inner_enum_vals = field.get("innerEnumValues") or []
+            if inner_enum_vals:
+                return f"用逗号分隔，可选值：{' | '.join([str(v) for v in inner_enum_vals])}"
+            return f"用逗号分隔多个值"
+
     return ""
 
 def _schema_fields(schema: dict) -> list:
@@ -141,12 +157,13 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
     ws_main = wb.active
     ws_main.title = main_sheet_name
 
-    # 主表：Name + 非数组字段
+    # 主表：Name + 非数组字段 + 基本类型数组字段
     main_fields = [{"name": "Name", "kind": "string"}]  # DataTable行名/主键
     for f in _schema_fields(schema):
         if f.get("bExcelIgnore"):
             continue
-        if (f.get("kind") or "") == "array":
+        # 跳过 array<struct>（会创建子表），保留基本类型数组
+        if (f.get("kind") or "") == "array" and not _is_primitive_array(f):
             continue
         main_fields.append(f)
 
@@ -161,9 +178,8 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
         if (f.get("kind") or "") != "array":
             continue
 
-        inner_kind = (f.get("innerKind") or "").strip()
-        if inner_kind != "struct":
-            _warn(f"[ExcelTools][Schema] 暂不支持 array<{inner_kind}> 字段：{f.get('name')}")
+        # 基本类型数组已在主表处理，跳过
+        if _is_primitive_array(f):
             continue
 
         inner_struct_path = (f.get("innerStructPath") or "").strip()
@@ -211,12 +227,13 @@ def _write_csv_template_from_schema(schema: dict, out_dir_or_file: str, schema_d
 
     os.makedirs(out_dir, exist_ok=True)
 
-    # 主表
+    # 主表：Name + 非数组字段 + 基本类型数组字段
     main_fields = [{"name": "Name", "kind": "string"}]
     for f in _schema_fields(schema):
         if f.get("bExcelIgnore"):
             continue
-        if (f.get("kind") or "") == "array":
+        # 跳过 array<struct>（会创建子表），保留基本类型数组
+        if (f.get("kind") or "") == "array" and not _is_primitive_array(f):
             continue
         main_fields.append(f)
 
@@ -226,14 +243,14 @@ def _write_csv_template_from_schema(schema: dict, out_dir_or_file: str, schema_d
         w.writerow([_excel_col_name(f) for f in main_fields])
         w.writerow([_field_hint(schema, f) for f in main_fields])
 
-    # 子表
+    # 子表：每个 array<struct> 一个CSV
     for f in _schema_fields(schema):
         if f.get("bExcelIgnore"):
             continue
         if (f.get("kind") or "") != "array":
             continue
-        inner_kind = (f.get("innerKind") or "").strip()
-        if inner_kind != "struct":
+        # 基本类型数组已在主表处理，跳过
+        if _is_primitive_array(f):
             continue
 
         inner_struct_name = _struct_name_from_struct_path((f.get("innerStructPath") or "").strip())
@@ -318,6 +335,32 @@ def _to_scalar_from_cell(schema: dict, field: dict, value):
                 return {}
         return {}
     return value
+
+def _to_primitive_array_from_cell(field: dict, value) -> list:
+    """将逗号分隔的单元格值转换为基本类型数组"""
+    inner_kind = (field.get("innerKind") or "").strip()
+
+    # 解析逗号分隔的字符串
+    s = _safe_str(value, "")
+    if not s:
+        return []
+
+    items = [x.strip() for x in s.replace(";", ",").split(",") if x.strip()]
+
+    # 根据 innerKind 转换类型
+    result = []
+    for item in items:
+        if inner_kind == "bool":
+            result.append(_safe_bool(item, False))
+        elif inner_kind == "int":
+            result.append(int(_safe_num(item, 0)))
+        elif inner_kind in ("float", "double"):
+            result.append(float(_safe_num(item, 0)))
+        else:
+            # string, name, text, enum, softclass, softobject 等都作为字符串
+            result.append(item)
+
+    return result
 
 def _sheet_to_dict_list(ws, skip_second_row_hint: bool = True):
     rows = list(ws.rows)
@@ -445,12 +488,13 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
             by_parent.setdefault(p, []).append(r)
         child_rows_map[af_name] = by_parent
 
-    # 主表字段：Name + 非数组字段
+    # 主表字段：Name + 非数组字段 + 基本类型数组字段
     main_fields = [{"name": "Name", "kind": "string"}]
     for f in _schema_fields(schema):
         if f.get("bExcelIgnore"):
             continue
-        if (f.get("kind") or "") == "array":
+        # 跳过 array<struct>（从子表读取），保留基本类型数组
+        if (f.get("kind") or "") == "array" and not _is_primitive_array(f):
             continue
         main_fields.append(f)
 
@@ -462,14 +506,18 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
 
         item = {"Name": name}
 
-        # 写入非数组字段
+        # 写入非数组字段和基本类型数组字段
         for f in main_fields:
             fn = str(f.get("name") or "").strip()
             if fn == "Name":
                 continue
             col = _excel_col_name(f)
             cell_val = r.get(col)
-            item[fn] = _to_scalar_from_cell(schema, f, cell_val)
+            # 基本类型数组使用专门的解析函数
+            if _is_primitive_array(f):
+                item[fn] = _to_primitive_array_from_cell(f, cell_val)
+            else:
+                item[fn] = _to_scalar_from_cell(schema, f, cell_val)
 
         # 写入 array<struct> 子表
         for af in array_fields:

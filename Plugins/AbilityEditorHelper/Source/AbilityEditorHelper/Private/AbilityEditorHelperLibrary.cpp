@@ -786,7 +786,6 @@ bool UAbilityEditorHelperLibrary::WriteStructSchemaToJson(UScriptStruct* StructT
 bool UAbilityEditorHelperLibrary::GenerateStructSchemaToPythonFolder(UScriptStruct* StructType, FString& OutError)
 {
 	OutError.Reset();
-	FString SchemaJsonFilePath = GetDefault<UAbilityEditorHelperSettings>()->JsonPath;
 
 	if (!StructType)
 	{
@@ -802,7 +801,7 @@ bool UAbilityEditorHelperLibrary::GenerateStructSchemaToPythonFolder(UScriptStru
 	}
 
 	const FString FileName = FString::Printf(TEXT("%s.schema.json"), *StructType->GetName());
-	SchemaJsonFilePath = FPaths::Combine(SchemaDir, FileName);
+	const FString SchemaJsonFilePath = FPaths::Combine(SchemaDir, FileName);
 
 	return WriteStructSchemaToJson(StructType, SchemaJsonFilePath, OutError);
 }
@@ -831,7 +830,7 @@ UScriptStruct* UAbilityEditorHelperLibrary::LoadStructFromPath(const FString& St
 	return LoadedStruct;
 }
 
-bool UAbilityEditorHelperLibrary::GenerateAllSchemasFromSettings(int32& OutSuccessCount, int32& OutFailureCount, FString& OutErrors)
+bool UAbilityEditorHelperLibrary::GenerateAllSchemasFromSettings(bool bClearSchemaFolderFirst, int32& OutSuccessCount, int32& OutFailureCount, FString& OutErrors)
 {
 	OutSuccessCount = 0;
 	OutFailureCount = 0;
@@ -850,6 +849,25 @@ bool UAbilityEditorHelperLibrary::GenerateAllSchemasFromSettings(int32& OutSucce
 	{
 		OutErrors = TEXT("StructTypePathsToExportSchema 列表为空，没有需要导出的结构体");
 		return true; // 不算失败，只是没有工作要做
+	}
+
+	// 如果需要，先清空 Schema 文件夹
+	if (bClearSchemaFolderFirst)
+	{
+		const FString SchemaDir = GetPluginPythonSchemaDir();
+		IPlatformFile& PF = FPlatformFileManager::Get().GetPlatformFile();
+
+		if (PF.DirectoryExists(*SchemaDir))
+		{
+			TArray<FString> FilesToDelete;
+			PF.FindFiles(FilesToDelete, *SchemaDir, TEXT(".schema.json"));
+
+			for (const FString& FilePath : FilesToDelete)
+			{
+				PF.DeleteFile(*FilePath);
+				UE_LOG(LogTemp, Log, TEXT("[AbilityEditorHelper] 删除旧 Schema 文件：%s"), *FilePath);
+			}
+		}
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[AbilityEditorHelper] 开始批量生成 Schema，共 %d 个结构体"), StructPaths.Num());
@@ -906,7 +924,7 @@ bool UAbilityEditorHelperLibrary::GenerateAllSchemasFromSettings(int32& OutSucce
 	return bAllSuccess;
 }
 
-bool UAbilityEditorHelperLibrary::ImportDataTableFromJsonFile(UDataTable* TargetDataTable, const FString& JsonFilePath, bool bClearBeforeImport, int32& OutImportedRowCount, FString& OutError)
+bool UAbilityEditorHelperLibrary::ImportDataTableFromJsonFile(UDataTable* TargetDataTable, const FString& JsonFileName, bool bClearBeforeImport, int32& OutImportedRowCount, FString& OutError)
 {
 	OutError.Reset();
 	OutImportedRowCount = 0;
@@ -917,11 +935,21 @@ bool UAbilityEditorHelperLibrary::ImportDataTableFromJsonFile(UDataTable* Target
 		return false;
 	}
 
-	if (JsonFilePath.IsEmpty())
+	if (JsonFileName.IsEmpty())
 	{
-		OutError = TEXT("JsonFilePath 为空");
+		OutError = TEXT("JsonFileName 为空");
 		return false;
 	}
+
+	// 从设置获取 JsonPath 并拼接完整路径
+	const UAbilityEditorHelperSettings* Settings = GetDefault<UAbilityEditorHelperSettings>();
+	if (!Settings || Settings->JsonPath.IsEmpty())
+	{
+		OutError = TEXT("UAbilityEditorHelperSettings 的 JsonPath 未配置");
+		return false;
+	}
+
+	const FString JsonFilePath = FPaths::Combine(Settings->JsonPath, JsonFileName);
 
 	if (!FPaths::FileExists(JsonFilePath))
 	{

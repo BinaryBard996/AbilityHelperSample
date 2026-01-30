@@ -72,13 +72,14 @@ public:
 
 	/**
 	 * 批量生成 Schema：根据 UAbilityEditorHelperSettings 中配置的结构体列表，批量导出所有 Schema 到 Python/Schema 目录
+	 * @param bClearSchemaFolderFirst  生成前是否先清空 Schema 文件夹
 	 * @param OutSuccessCount  成功导出的结构体数量
 	 * @param OutFailureCount  导出失败的结构体数量
 	 * @param OutErrors        所有失败的错误信息（每行一个错误）
 	 * @return                 是否全部成功
 	 */
 	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|Schema")
-	static bool GenerateAllSchemasFromSettings(int32& OutSuccessCount, int32& OutFailureCount, FString& OutErrors);
+	static bool GenerateAllSchemasFromSettings(bool bClearSchemaFolderFirst, int32& OutSuccessCount, int32& OutFailureCount, FString& OutErrors);
 
 	/**
 	 * 从结构体路径字符串加载 UScriptStruct
@@ -91,13 +92,13 @@ public:
 	/**
 	 * 从指定 JSON 文件导入数据到目标 DataTable。
 	 * @param TargetDataTable      目标数据表
-	 * @param JsonFilePath         JSON 文件的绝对路径
+	 * @param JsonFileName         JSON 文件名（将与 UAbilityEditorHelperSettings::JsonPath 拼接成完整路径）
 	 * @param bClearBeforeImport   导入前是否清空现有行
 	 * @param OutImportedRowCount  成功导入的行数（由引擎返回）
 	 * @param OutError             失败时的错误信息
 	 * @return                     是否导入成功（依据引擎返回值>=0判定）
 	 */
 	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|DataTable", meta=(DisplayName="Import DataTable From JSON File", Keywords="DataTable Import JSON"))
-	static bool ImportDataTableFromJsonFile(UDataTable* TargetDataTable, const FString& JsonFilePath, bool bClearBeforeImport, int32& OutImportedRowCount, FString& OutError);
+	static bool ImportDataTableFromJsonFile(UDataTable* TargetDataTable, const FString& JsonFileName, bool bClearBeforeImport, int32& OutImportedRowCount, FString& OutError);
 
 };
