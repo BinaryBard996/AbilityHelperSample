@@ -1,7 +1,24 @@
 {
 	"structPath": "/Script/AbilityEditorHelper.GameplayEffectConfig",
-	"hash": "dae89835b2524fd715d076a834a26e30",
+	"hash": "cbb31a15c7fd1dc87019336ab2a2448a",
 	"fields": [
+		{
+			"name": "Description",
+			"category": "Modifier",
+			"kind": "string",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "Description of this modifier for documentation",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
 		{
 			"name": "ParentClass",
 			"category": "Basic",

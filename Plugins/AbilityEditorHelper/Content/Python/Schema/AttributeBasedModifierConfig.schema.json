@@ -1,21 +1,21 @@
 {
 	"structPath": "/Script/AbilityEditorHelper.AttributeBasedModifierConfig",
-	"hash": "c1ab874ee6356cd6f6e00e515c6bacda",
+	"hash": "97311449cdd43dfe60e96bad53e60389",
 	"fields": [
 		{
 			"name": "BackingAttribute",
 			"category": "AttributeBased",
-			"kind": "struct",
+			"kind": "string",
 			"enumPath": "",
 			"enumValues": [],
-			"structPath": "/Script/GameplayAbilities.GameplayAttribute",
+			"structPath": "",
 			"innerKind": "",
 			"innerStructPath": "",
 			"innerEnumPath": "",
 			"innerEnumValues": [],
 			"bExcelIgnore": false,
 			"excelName": "",
-			"excelHint": "",
+			"excelHint": "Format: ClassName.PropertyName (e.g. TestAttributeSet.TestPropertyOne)",
 			"excelSheet": "",
 			"excelSeparator": ""
 		},

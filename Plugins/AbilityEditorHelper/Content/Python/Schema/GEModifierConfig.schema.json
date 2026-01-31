@@ -1,21 +1,21 @@
 {
 	"structPath": "/Script/AbilityEditorHelper.GEModifierConfig",
-	"hash": "e5cc90e97849fc8e6d226707db66d69c",
+	"hash": "67e578c67f1de5d17feafe4d2622027f",
 	"fields": [
 		{
 			"name": "Attribute",
 			"category": "Modifier",
-			"kind": "struct",
+			"kind": "string",
 			"enumPath": "",
 			"enumValues": [],
-			"structPath": "/Script/GameplayAbilities.GameplayAttribute",
+			"structPath": "",
 			"innerKind": "",
 			"innerStructPath": "",
 			"innerEnumPath": "",
 			"innerEnumValues": [],
 			"bExcelIgnore": false,
 			"excelName": "",
-			"excelHint": "",
+			"excelHint": "Format: ClassName.PropertyName (e.g. TestAttributeSet.TestPropertyOne)",
 			"excelSheet": "",
 			"excelSeparator": ""
 		},

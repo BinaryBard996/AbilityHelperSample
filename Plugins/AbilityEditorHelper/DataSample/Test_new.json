@@ -120,7 +120,7 @@
                 "Attribute": "TestAttributeSet.TestPropertyOne",
                 "ModifierOp": "AddBase",
                 "MagnitudeCalculationType": "ScalableFloat",
-                "Magnitude": 10.0,
+                "Magnitude": 100.0,
                 "AttributeBasedConfig": {
                     "BackingAttribute": "",
                     "AttributeCalculationType": "AttributeMagnitude",

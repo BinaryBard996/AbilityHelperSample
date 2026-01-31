@@ -10,8 +10,8 @@ from ability_editor_excel_tool import (
 class AbilityEditorHelperPythonLibrary(unreal.BlueprintFunctionLibrary):
 
     # 根据结构体类型名称从schema生成Excel模板文件
-    @unreal.ufunction(params=[str, str], static=True)
-    def GenerateExcelTemplateFromSchema(struct_type_name, excel_file_name):
+    @unreal.ufunction(params=[str, str, bool], static=True)
+    def GenerateExcelTemplateFromSchema(struct_type_name, excel_file_name, preserve_data=True):
         ability_editor_helper_settings = unreal.AbilityEditorHelperLibrary.get_ability_editor_helper_settings()
         excel_path = ability_editor_helper_settings.excel_path
         schema_path = ability_editor_helper_settings.schema_path
@@ -23,7 +23,7 @@ class AbilityEditorHelperPythonLibrary(unreal.BlueprintFunctionLibrary):
             unreal.log_error(schema_file_path_or_err)
             return
         
-        generate_excel_template_from_schema(schema_file_path_or_err, excel_file_path)
+        generate_excel_template_from_schema(schema_file_path_or_err, excel_file_path, preserve_data=preserve_data)
 
         # 检验excel文件是否被成功创建了
         bool_valid, excel_file_path_or_err = ability_editor_utils.validate_excel_file(excel_file_path)

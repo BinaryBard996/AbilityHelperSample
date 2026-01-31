@@ -44,6 +44,14 @@ def _warn(msg: str):
     else:
         print(f"[WARN] {msg}")
 
+def _safe_sheet_name(name: str, max_len: int = 31) -> str:
+    """
+    安全地截断 Excel 工作表名称（Excel 限制 31 字符）
+    """
+    if len(name) <= max_len:
+        return name
+    return name[:max_len]
+
 def _schema_dir_default() -> str:
     # 插件 Content/Python/Schema
     here = os.path.dirname(os.path.abspath(__file__))
@@ -131,11 +139,12 @@ def _field_hint(schema: dict, field: dict) -> str:
     # 基本类型数组提示
     if kind == "array":
         inner_kind = (field.get("innerKind") or "").strip()
+        sep = field.get("excelSeparator") or ","
         if inner_kind != "struct":
             inner_enum_vals = field.get("innerEnumValues") or []
             if inner_enum_vals:
-                return f"用逗号分隔，可选值：{' | '.join([str(v) for v in inner_enum_vals])}"
-            return f"用逗号分隔多个值"
+                return f"用 {sep} 分隔，可选值：{' | '.join([str(v) for v in inner_enum_vals])}"
+            return f"用 {sep} 分隔多个值"
 
     return ""
 
@@ -145,13 +154,141 @@ def _schema_fields(schema: dict) -> list:
 def _schema_struct_name(schema: dict) -> str:
     return _struct_name_from_struct_path(schema.get("structPath") or "")
 
-def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_dir: Optional[str] = None):
+def _get_enum_values_for_field(field: dict) -> list:
+    """获取字段的枚举值列表（支持enum类型和enum数组）"""
+    kind = (field.get("kind") or "").strip()
+
+    if kind == "enum":
+        return field.get("enumValues") or []
+
+    # 数组的内部元素是枚举
+    if kind == "array":
+        inner_kind = (field.get("innerKind") or "").strip()
+        if inner_kind == "enum":
+            return field.get("innerEnumValues") or []
+
+    return []
+
+def _apply_enum_validation(ws, col_idx: int, enum_values: list, start_row: int = 3, end_row: int = 1000):
+    """
+    为Excel列应用下拉列表数据验证
+    - col_idx: 列索引（1-based）
+    - enum_values: 枚举值列表
+    - start_row: 起始行（默认3，跳过标题和提示行）
+    - end_row: 结束行
+    """
+    from openpyxl.worksheet.datavalidation import DataValidation
+    from openpyxl.utils import get_column_letter
+
+    if not enum_values:
+        return
+
+    # Excel 数据验证的 formula1 有 255 字符限制
+    # 如果选项太长，截断并警告
+    options_str = ",".join(enum_values)
+    if len(options_str) > 250:
+        _warn(f"[ExcelTools] 枚举选项过多，下拉列表可能被截断")
+        # 尝试截断
+        truncated = []
+        current_len = 0
+        for v in enum_values:
+            if current_len + len(v) + 1 > 250:
+                break
+            truncated.append(v)
+            current_len += len(v) + 1
+        options_str = ",".join(truncated)
+
+    dv = DataValidation(
+        type="list",
+        formula1=f'"{options_str}"',
+        allow_blank=True,
+        showDropDown=False,  # False = 显示下拉箭头
+        showErrorMessage=True,
+        errorTitle="无效输入",
+        error="请从下拉列表中选择有效的值"
+    )
+
+    col_letter = get_column_letter(col_idx)
+    cell_range = f"{col_letter}{start_row}:{col_letter}{end_row}"
+    dv.add(cell_range)
+    ws.add_data_validation(dv)
+
+def _read_existing_xlsx_data(xlsx_path: str) -> tuple:
+    """
+    读取现有Excel文件的数据和列宽
+    返回:
+        - data_dict: {sheet_name: [{col_name: value, ...}, ...]}
+        - col_widths_dict: {sheet_name: {col_name: width, ...}}
+    跳过第二行（提示行）
+    """
+    if not os.path.exists(xlsx_path):
+        return {}, {}
+
+    try:
+        wb = openpyxl.load_workbook(xlsx_path, data_only=True)
+        data_result = {}
+        col_widths_result = {}
+
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            rows = list(ws.rows)
+            if not rows:
+                data_result[sheet_name] = []
+                col_widths_result[sheet_name] = {}
+                continue
+
+            # 第一行是表头
+            headers = [str(c.value).strip() if c.value is not None else "" for c in rows[0]]
+
+            # 读取列宽（按列名索引）
+            col_widths = {}
+            for col_idx, header in enumerate(headers):
+                if header:
+                    from openpyxl.utils import get_column_letter
+                    col_letter = get_column_letter(col_idx + 1)
+                    if col_letter in ws.column_dimensions:
+                        width = ws.column_dimensions[col_letter].width
+                        if width is not None and width > 0:
+                            col_widths[header] = width
+            col_widths_result[sheet_name] = col_widths
+
+            # 读取数据
+            data = []
+            # 从第3行开始读取数据（跳过表头和提示行）
+            for row_idx, row in enumerate(rows):
+                if row_idx < 2:  # 跳过表头和提示行
+                    continue
+                # 跳过空行
+                if all((c.value is None or str(c.value).strip() == "") for c in row):
+                    continue
+                row_data = {}
+                for col_idx, cell in enumerate(row):
+                    if col_idx < len(headers) and headers[col_idx]:
+                        row_data[headers[col_idx]] = cell.value
+                data.append(row_data)
+
+            data_result[sheet_name] = data
+
+        return data_result, col_widths_result
+    except Exception as e:
+        _warn(f"[ExcelTools] 读取现有文件失败：{e}，将创建新文件")
+        return {}, {}
+
+def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_dir: Optional[str] = None, preserve_data: bool = True):
     if not OPENPYXL_AVAILABLE:
         raise RuntimeError("未安装openpyxl，无法生成xlsx。请安装后重试，或使用CSV回退。")
 
     schema_dir = schema_dir or _schema_dir_default()
     struct_name = _schema_struct_name(schema)
     main_sheet_name = struct_name if struct_name else "Main"
+
+    # 读取现有数据和列宽（如果文件存在且需要保留数据）
+    existing_data = {}
+    existing_col_widths = {}
+    if preserve_data:
+        existing_data, existing_col_widths = _read_existing_xlsx_data(out_xlsx_path)
+        if existing_data:
+            _log(f"[ExcelTools] 检测到现有文件，将保留已有数据和列宽")
 
     wb = openpyxl.Workbook()
     ws_main = wb.active
@@ -170,6 +307,34 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
     headers = [_excel_col_name(f) for f in main_fields]
     ws_main.append(headers)
     ws_main.append([_field_hint(schema, f) for f in main_fields])
+
+    # 写入现有数据（如果有）
+    main_existing = existing_data.get(main_sheet_name, [])
+    for row_data in main_existing:
+        row_values = []
+        for header in headers:
+            row_values.append(row_data.get(header, None))
+        ws_main.append(row_values)
+
+    if main_existing:
+        _log(f"[ExcelTools] 主表保留了 {len(main_existing)} 行数据")
+
+    # 为枚举列添加下拉列表验证（动态计算结束行）
+    # 至少覆盖现有数据 + 500 行余量，最少1000行
+    main_end_row = max(1000, len(main_existing) + 3 + 500)
+    for col_idx, field in enumerate(main_fields, start=1):
+        enum_values = _get_enum_values_for_field(field)
+        if enum_values:
+            _apply_enum_validation(ws_main, col_idx, enum_values, end_row=main_end_row)
+
+    # 应用主表列宽（如果有保存的列宽）
+    main_col_widths = existing_col_widths.get(main_sheet_name, {})
+    if main_col_widths:
+        from openpyxl.utils import get_column_letter
+        for col_idx, header in enumerate(headers, start=1):
+            if header in main_col_widths:
+                col_letter = get_column_letter(col_idx)
+                ws_main.column_dimensions[col_letter].width = main_col_widths[header]
 
     # 子表：每个 array<struct> 一个Sheet
     for f in _schema_fields(schema):
@@ -190,7 +355,9 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
 
         inner_schema = _load_schema(inner_struct_name, schema_dir=schema_dir)
 
-        sub_sheet_name = f"{main_sheet_name}.{str(f.get('name') or '').strip()}"
+        # 构建子表名称（需要截断以符合 Excel 31 字符限制）
+        sub_sheet_name_full = f"{main_sheet_name}.{str(f.get('name') or '').strip()}"
+        sub_sheet_name = _safe_sheet_name(sub_sheet_name_full)
         ws_sub = wb.create_sheet(sub_sheet_name)
 
         sub_fields = [{"name": "ParentName", "kind": "string"}]
@@ -202,8 +369,36 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
                 continue
             sub_fields.append(sf)
 
-        ws_sub.append([_excel_col_name(x) for x in sub_fields])
+        sub_headers = [_excel_col_name(x) for x in sub_fields]
+        ws_sub.append(sub_headers)
         ws_sub.append([_field_hint(inner_schema, x) for x in sub_fields])
+
+        # 写入子表现有数据（如果有）
+        sub_existing = existing_data.get(sub_sheet_name, [])
+        for row_data in sub_existing:
+            row_values = []
+            for header in sub_headers:
+                row_values.append(row_data.get(header, None))
+            ws_sub.append(row_values)
+
+        if sub_existing:
+            _log(f"[ExcelTools] 子表 {sub_sheet_name} 保留了 {len(sub_existing)} 行数据")
+
+        # 为子表的枚举列添加下拉列表验证（动态计算结束行）
+        sub_end_row = max(1000, len(sub_existing) + 3 + 500)
+        for col_idx, sf in enumerate(sub_fields, start=1):
+            enum_values = _get_enum_values_for_field(sf)
+            if enum_values:
+                _apply_enum_validation(ws_sub, col_idx, enum_values, end_row=sub_end_row)
+
+        # 应用子表列宽（如果有保存的列宽）
+        sub_col_widths = existing_col_widths.get(sub_sheet_name, {})
+        if sub_col_widths:
+            from openpyxl.utils import get_column_letter
+            for col_idx, header in enumerate(sub_headers, start=1):
+                if header in sub_col_widths:
+                    col_letter = get_column_letter(col_idx)
+                    ws_sub.column_dimensions[col_letter].width = sub_col_widths[header]
 
     _ensure_dir(out_xlsx_path)
     wb.save(out_xlsx_path)
@@ -272,7 +467,7 @@ def _write_csv_template_from_schema(schema: dict, out_dir_or_file: str, schema_d
             w.writerow([_excel_col_name(x) for x in sub_fields])
             w.writerow([_field_hint(inner_schema, x) for x in sub_fields])
 
-def generate_excel_template_from_schema(schema_name_or_path: str, out_path: str, schema_dir: Optional[str] = None):
+def generate_excel_template_from_schema(schema_name_or_path: str, out_path: str, schema_dir: Optional[str] = None, preserve_data: bool = True):
     """
     新入口：基于 Schema 生成 Excel/CSV 模板
     - schema_name_or_path：
@@ -281,11 +476,14 @@ def generate_excel_template_from_schema(schema_name_or_path: str, out_path: str,
     - out_path：
         - .xlsx 且 openpyxl 可用：输出 xlsx
         - 否则：输出 CSV 到 out_path 所在目录（或 out_path 本身作为目录）
+    - preserve_data：
+        - True（默认）：如果目标文件已存在，保留匹配列名的现有数据
+        - False：完全覆盖，不保留任何数据
     """
     schema = _load_schema(schema_name_or_path, schema_dir=schema_dir)
 
     if out_path.lower().endswith(".xlsx") and OPENPYXL_AVAILABLE:
-        _write_xlsx_template_from_schema(schema, out_path, schema_dir=schema_dir)
+        _write_xlsx_template_from_schema(schema, out_path, schema_dir=schema_dir, preserve_data=preserve_data)
         _log(f"[ExcelTools][Schema] 模板已生成：{out_path}")
     else:
         _write_csv_template_from_schema(schema, out_path, schema_dir=schema_dir)
@@ -303,6 +501,46 @@ def _safe_bool(v, default=False):
         return False
     return default
 
+def _get_empty_tag_container() -> dict:
+    """生成空的 GameplayTagContainer 结构"""
+    return {"GameplayTags": [], "ParentTags": []}
+
+def _get_empty_tag_requirements() -> dict:
+    """生成空的 TagRequirementsConfig 结构"""
+    return {
+        "RequireTags": _get_empty_tag_container(),
+        "IgnoreTags": _get_empty_tag_container()
+    }
+
+def _get_empty_attribute_based_config() -> dict:
+    """生成空的 AttributeBasedModifierConfig 结构"""
+    return {
+        "BackingAttribute": "",
+        "AttributeCalculationType": "AttributeMagnitude",
+        "Coefficient": 1.0,
+        "PreMultiplyAdditiveValue": 0.0,
+        "PostMultiplyAdditiveValue": 0.0
+    }
+
+def _get_empty_set_by_caller_config() -> dict:
+    """生成空的 SetByCallerModifierConfig 结构"""
+    return {
+        "DataTag": {"TagName": ""},
+        "DataName": ""
+    }
+
+def _get_empty_gameplay_tag() -> dict:
+    """生成空的 GameplayTag 结构"""
+    return {"TagName": ""}
+
+def _parse_gameplay_tag(value) -> dict:
+    """解析 GameplayTag 字符串为对象"""
+    s = _safe_str(value, "").strip()
+    if not s:
+        return _get_empty_gameplay_tag()
+    # 支持直接填 Tag 名称，如 "GameplayCue.Test.Fire"
+    return {"TagName": s}
+
 def _to_scalar_from_cell(schema: dict, field: dict, value):
     kind = (field.get("kind") or "").strip()
 
@@ -318,14 +556,44 @@ def _to_scalar_from_cell(schema: dict, field: dict, value):
         return _safe_str(value, "")
     if kind == "struct":
         struct_path = (field.get("structPath") or "").strip()
+        struct_name = _struct_name_from_struct_path(struct_path)
         rule = _get_special_rule(schema, struct_path)
+
         if rule == "tag_container_rule":
-            return _to_tag_container_obj(_split_tag_string(value))
+            tags = _split_tag_string(value)
+            return _to_tag_container_obj(tags) if tags else _get_empty_tag_container()
+
         if rule == "attribute_rule":
             s = _safe_str(value, "")
             return _parse_attribute_cell(s) if s else {}
+
         if rule == "tag_requirements_rule":
-            return _parse_tag_requirements(value)
+            s = _safe_str(value, "")
+            return _parse_tag_requirements(value) if s else _get_empty_tag_requirements()
+
+        # 特定结构体的默认值
+        if struct_name == "AttributeBasedModifierConfig":
+            s = _safe_str(value, "")
+            if s.startswith("{") and s.endswith("}"):
+                try:
+                    return json.loads(s)
+                except Exception:
+                    pass
+            return _get_empty_attribute_based_config()
+
+        if struct_name == "SetByCallerModifierConfig":
+            s = _safe_str(value, "")
+            if s.startswith("{") and s.endswith("}"):
+                try:
+                    return json.loads(s)
+                except Exception:
+                    pass
+            return _get_empty_set_by_caller_config()
+
+        # GameplayTag（单个 tag）
+        if struct_name == "GameplayTag":
+            return _parse_gameplay_tag(value)
+
         # 通用struct：允许用户直接填一个JSON对象字符串
         s = _safe_str(value, "")
         if s.startswith("{") and s.endswith("}"):
@@ -337,15 +605,20 @@ def _to_scalar_from_cell(schema: dict, field: dict, value):
     return value
 
 def _to_primitive_array_from_cell(field: dict, value) -> list:
-    """将逗号分隔的单元格值转换为基本类型数组"""
+    """将单元格值转换为基本类型数组"""
     inner_kind = (field.get("innerKind") or "").strip()
+    sep = (field.get("excelSeparator") or "").strip()
 
-    # 解析逗号分隔的字符串
+    # 解析分隔的字符串
     s = _safe_str(value, "")
     if not s:
         return []
 
-    items = [x.strip() for x in s.replace(";", ",").split(",") if x.strip()]
+    # 如果指定了特殊分隔符，优先使用；否则默认支持逗号和分号
+    if sep:
+        items = [x.strip() for x in s.split(sep) if x.strip()]
+    else:
+        items = [x.strip() for x in s.replace(";", ",").split(",") if x.strip()]
 
     # 根据 innerKind 转换类型
     result = []
@@ -369,9 +642,14 @@ def _sheet_to_dict_list(ws, skip_second_row_hint: bool = True):
     headers = [str(c.value).strip() if c.value is not None else "" for c in rows[0]]
     data = []
     start_idx = 1
-    # 跳过第二行枚举提示
+    # 智能检测第二行是否为提示行
+    # 提示行的特征：第一列（Name 或 ParentName）为空
     if skip_second_row_hint and len(rows) >= 2:
-        start_idx = 2
+        second_row = rows[1]
+        first_cell_value = second_row[0].value if second_row else None
+        # 只有当第一列为空时才跳过（这是提示行的特征）
+        if first_cell_value is None or str(first_cell_value).strip() == "":
+            start_idx = 2
     for r in rows[start_idx:]:
         # 若整行为空则跳过
         if all((c.value is None or str(c.value).strip() == "") for c in r):
@@ -478,7 +756,8 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
     child_rows_map = {}  # arrayFieldName -> { ParentName -> [rows...] }
     for af in array_fields:
         af_name = str(af.get("name") or "").strip()
-        sub_sheet = f"{main_sheet_name}.{af_name}"
+        # 使用安全的工作表名称（Excel 限制 31 字符）
+        sub_sheet = _safe_sheet_name(f"{main_sheet_name}.{af_name}")
         sub_rows = sheet_map.get(sub_sheet) or []
         by_parent = {}
         for r in sub_rows:
@@ -515,7 +794,9 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
             cell_val = r.get(col)
             # 基本类型数组使用专门的解析函数
             if _is_primitive_array(f):
-                item[fn] = _to_primitive_array_from_cell(f, cell_val)
+                arr_val = _to_primitive_array_from_cell(f, cell_val)
+                # 空数组也输出，让UE知道这是个数组字段
+                item[fn] = arr_val
             else:
                 item[fn] = _to_scalar_from_cell(schema, f, cell_val)
 
@@ -644,8 +925,14 @@ def _parse_tag_requirements(cell_value) -> dict:
             elif part.startswith("Ignore:"):
                 ignore = _split_tag_string(part[7:])
     else:
-        # 回退：将整个字符串视为 RequireTags
-        require = _split_tag_string(s)
+        # 没有 | 分隔符时，检查是否有 Require: 或 Ignore: 前缀
+        if s.startswith("Require:"):
+            require = _split_tag_string(s[8:])
+        elif s.startswith("Ignore:"):
+            ignore = _split_tag_string(s[7:])
+        else:
+            # 回退：将整个字符串视为 RequireTags
+            require = _split_tag_string(s)
 
     return {
         "RequireTags": _to_tag_container_obj(require),
@@ -706,6 +993,7 @@ if __name__ == "__main__":
     p0.add_argument("schema", help="Schema名称(如 GameplayEffectConfig) 或 .schema.json 路径")
     p0.add_argument("out", help="输出.xlsx路径（无openpyxl时输出CSV到目录）")
     p0.add_argument("--schema-dir", default="", help="Schema目录（默认插件Content/Python/Schema）")
+    p0.add_argument("--no-preserve", action="store_true", help="不保留现有数据，完全覆盖")
 
     p00 = sub.add_parser("schema_export")
     p00.add_argument("schema", help="Schema名称(如 GameplayEffectConfig) 或 .schema.json 路径")
@@ -716,11 +1004,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.cmd == "schema_template":
         sd = args.schema_dir.strip() or None
-        generate_excel_template_from_schema(args.schema, args.out, schema_dir=sd)
+        preserve = not getattr(args, 'no_preserve', False)
+        generate_excel_template_from_schema(args.schema, args.out, schema_dir=sd, preserve_data=preserve)
     elif args.cmd == "schema_export":
         sd = args.schema_dir.strip() or None
         export_excel_to_json_using_schema(args.inp, args.out, args.schema, schema_dir=sd)
     else:
         print("用法：\n"
-              "  schema_template <schema_name|schema_path> <out.xlsx|out_dir> [--schema-dir <dir>]\n"
+              "  schema_template <schema_name|schema_path> <out.xlsx|out_dir> [--schema-dir <dir>] [--no-preserve]\n"
               "  schema_export   <schema_name|schema_path> <in.xlsx|csv_dir> <out.json> [--schema-dir <dir>]")

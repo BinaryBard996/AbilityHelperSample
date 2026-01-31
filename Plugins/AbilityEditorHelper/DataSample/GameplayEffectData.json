@@ -1,23 +1,31 @@
 [
 	{
-		"Name": "Test1",
+		"Name": "Test_1",
+		"Description": "Test",
+		"ParentClass": "",
 		"DurationType": "Instant",
 		"DurationMagnitude": 0,
 		"Period": 0,
 		"StackingType": "None",
-		"StackLimitCount": 1,
+		"StackLimitCount": 0,
 		"StackDurationRefreshPolicy": "RefreshOnSuccessfulApplication",
 		"StackPeriodResetPolicy": "ResetOnSuccessfulApplication",
 		"AssetTags":
 		{
 			"GameplayTags": [
 				{
-					"TagName": "GameplayCue.Test"
+					"TagName": "Tests.GenericTag.One"
+				},
+				{
+					"TagName": "Tests.GenericTag.Two"
 				}
 			],
 			"ParentTags": [
 				{
-					"TagName": "GameplayCue"
+					"TagName": "Tests"
+				},
+				{
+					"TagName": "Tests.GenericTag"
 				}
 			]
 		},
@@ -26,50 +34,289 @@
 			"GameplayTags": [],
 			"ParentTags": []
 		},
+		"ApplicationTagRequirements":
+		{
+			"RequireTags":
+			{
+				"GameplayTags": [
+					{
+						"TagName": "Tests.GenericTag.One"
+					}
+				],
+				"ParentTags": [
+					{
+						"TagName": "Tests"
+					},
+					{
+						"TagName": "Tests.GenericTag"
+					}
+				]
+			},
+			"IgnoreTags":
+			{
+				"GameplayTags": [],
+				"ParentTags": []
+			}
+		},
+		"OngoingTagRequirements":
+		{
+			"RequireTags":
+			{
+				"GameplayTags": [],
+				"ParentTags": []
+			},
+			"IgnoreTags":
+			{
+				"GameplayTags": [
+					{
+						"TagName": "Tests.GenericTag.One"
+					}
+				],
+				"ParentTags": [
+					{
+						"TagName": "Tests"
+					},
+					{
+						"TagName": "Tests.GenericTag"
+					}
+				]
+			}
+		},
+		"RemovalTagRequirements":
+		{
+			"RequireTags":
+			{
+				"GameplayTags": [
+					{
+						"TagName": "Tests.GenericTag.One"
+					}
+				],
+				"ParentTags": [
+					{
+						"TagName": "Tests"
+					},
+					{
+						"TagName": "Tests.GenericTag"
+					}
+				]
+			},
+			"IgnoreTags":
+			{
+				"GameplayTags": [
+					{
+						"TagName": "Tests.GenericTag.One"
+					}
+				],
+				"ParentTags": [
+					{
+						"TagName": "Tests"
+					},
+					{
+						"TagName": "Tests.GenericTag"
+					}
+				]
+			}
+		},
+		"CancelAbilitiesWithTags":
+		{
+			"GameplayTags": [],
+			"ParentTags": []
+		},
+		"BlockAbilitiesWithTags":
+		{
+			"GameplayTags": [],
+			"ParentTags": []
+		},
+		"GrantedAbilityClasses": [],
 		"Modifiers": [
 			{
-				"Attribute":
-				{
-					"AttributeName": "OutgoingDuration",
-					"Attribute": "/Script/GameplayAbilities.AbilitySystemComponent:OutgoingDuration",
-					"AttributeOwner": "/Script/CoreUObject.Class'/Script/GameplayAbilities.AbilitySystemComponent'"
-				},
+				"Attribute": "TestAttributeSet.TestPropertyOne",
 				"ModifierOp": "AddBase",
 				"MagnitudeCalculationType": "ScalableFloat",
-				"Magnitude": 100
-			},
-			{
-				"Attribute":
+				"Magnitude": 100,
+				"AttributeBasedConfig":
 				{
-					"AttributeName": "IncomingDuration",
-					"Attribute": "/Script/GameplayAbilities.AbilitySystemComponent:IncomingDuration",
-					"AttributeOwner": "/Script/CoreUObject.Class'/Script/GameplayAbilities.AbilitySystemComponent'"
+					"BackingAttribute": "",
+					"AttributeCalculationType": "AttributeMagnitude",
+					"Coefficient": 1,
+					"PreMultiplyAdditiveValue": 0,
+					"PostMultiplyAdditiveValue": 0
 				},
-				"ModifierOp": "AddBase",
-				"MagnitudeCalculationType": "ScalableFloat",
-				"Magnitude": 0
+				"SetByCallerConfig":
+				{
+					"DataTag":
+					{
+						"TagName": "None"
+					},
+					"DataName": "None"
+				},
+				"CustomCalculationClass": "",
+				"SourceTagRequirements":
+				{
+					"RequireTags":
+					{
+						"GameplayTags": [],
+						"ParentTags": []
+					},
+					"IgnoreTags":
+					{
+						"GameplayTags": [],
+						"ParentTags": []
+					}
+				},
+				"TargetTagRequirements":
+				{
+					"RequireTags":
+					{
+						"GameplayTags": [],
+						"ParentTags": []
+					},
+					"IgnoreTags":
+					{
+						"GameplayTags": [],
+						"ParentTags": []
+					}
+				}
 			}
-		]
+		],
+		"GameplayCues": [],
+		"ImmunityQueries": [],
+		"RemovalQueries": [],
+		"Executions": []
 	},
 	{
-		"Name": "Test2",
-		"DurationType": "Infinite",
+		"Name": "Test_2",
+		"Description": "Test",
+		"ParentClass": "/Game/GE_Base.GE_Base_C",
+		"DurationType": "Instant",
 		"DurationMagnitude": 0,
 		"Period": 0,
 		"StackingType": "None",
-		"StackLimitCount": 1,
+		"StackLimitCount": 0,
 		"StackDurationRefreshPolicy": "RefreshOnSuccessfulApplication",
 		"StackPeriodResetPolicy": "ResetOnSuccessfulApplication",
 		"AssetTags":
 		{
-			"GameplayTags": [],
-			"ParentTags": []
+			"GameplayTags": [
+				{
+					"TagName": "Tests.GenericTag.One"
+				},
+				{
+					"TagName": "Tests.GenericTag.Two"
+				}
+			],
+			"ParentTags": [
+				{
+					"TagName": "Tests"
+				},
+				{
+					"TagName": "Tests.GenericTag"
+				}
+			]
 		},
 		"GrantedTags":
 		{
 			"GameplayTags": [],
 			"ParentTags": []
 		},
-		"Modifiers": []
+		"ApplicationTagRequirements":
+		{
+			"RequireTags":
+			{
+				"GameplayTags": [
+					{
+						"TagName": "Tests.GenericTag.One"
+					}
+				],
+				"ParentTags": [
+					{
+						"TagName": "Tests"
+					},
+					{
+						"TagName": "Tests.GenericTag"
+					}
+				]
+			},
+			"IgnoreTags":
+			{
+				"GameplayTags": [],
+				"ParentTags": []
+			}
+		},
+		"OngoingTagRequirements":
+		{
+			"RequireTags":
+			{
+				"GameplayTags": [],
+				"ParentTags": []
+			},
+			"IgnoreTags":
+			{
+				"GameplayTags": [
+					{
+						"TagName": "Tests.GenericTag.One"
+					}
+				],
+				"ParentTags": [
+					{
+						"TagName": "Tests"
+					},
+					{
+						"TagName": "Tests.GenericTag"
+					}
+				]
+			}
+		},
+		"RemovalTagRequirements":
+		{
+			"RequireTags":
+			{
+				"GameplayTags": [
+					{
+						"TagName": "Tests.GenericTag.One"
+					}
+				],
+				"ParentTags": [
+					{
+						"TagName": "Tests"
+					},
+					{
+						"TagName": "Tests.GenericTag"
+					}
+				]
+			},
+			"IgnoreTags":
+			{
+				"GameplayTags": [
+					{
+						"TagName": "Tests.GenericTag.One"
+					}
+				],
+				"ParentTags": [
+					{
+						"TagName": "Tests"
+					},
+					{
+						"TagName": "Tests.GenericTag"
+					}
+				]
+			}
+		},
+		"CancelAbilitiesWithTags":
+		{
+			"GameplayTags": [],
+			"ParentTags": []
+		},
+		"BlockAbilitiesWithTags":
+		{
+			"GameplayTags": [],
+			"ParentTags": []
+		},
+		"GrantedAbilityClasses": [],
+		"Modifiers": [],
+		"GameplayCues": [],
+		"ImmunityQueries": [],
+		"RemovalQueries": [],
+		"Executions": []
 	}
 ]

@@ -4,7 +4,6 @@
 #include "AbilityEditorHelperLibrary.h"
 #include "AbilityEditorHelperSettings.h"
 #include "Misc/PackageName.h"
-#include "Runtime/Launch/Resources/Version.h"
 #include "GameplayTagContainer.h"
 #include "Engine/DataTable.h"
 #include "Kismet/DataTableFunctionLibrary.h"
@@ -19,10 +18,15 @@
 #include "GameplayEffectComponents/TargetTagsGameplayEffectComponent.h"
 #include "GameplayEffectComponents/AssetTagsGameplayEffectComponent.h"
 #include "GameplayEffectComponents/TargetTagRequirementsGameplayEffectComponent.h"
+#include "GameplayEffectComponents/BlockAbilityTagsGameplayEffectComponent.h"
+#include "GameplayEffectComponents/AbilitiesGameplayEffectComponent.h"
+#include "GameplayEffectComponents/ImmunityGameplayEffectComponent.h"
+#include "GameplayEffectComponents/RemoveOtherGameplayEffectComponent.h"
 
-// Calculation classes for modifiers and executions
+// Calculation classes and abilities
 #include "GameplayModMagnitudeCalculation.h"
 #include "GameplayEffectExecutionCalculation.h"
+#include "Abilities/GameplayAbility.h"
 
 // Added for Schema export / reflection / file ops
 #include "UObject/UnrealType.h"
@@ -31,6 +35,9 @@
 #include "HAL/PlatformFilemanager.h"
 #include "Interfaces/IPluginManager.h"
 #include "JsonObjectConverter.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+#include "GameplayEffectComponents/CancelAbilityTagsGameplayEffectComponent.h"
 #include "Misc/SecureHash.h"
 
 namespace
@@ -75,6 +82,199 @@ namespace
 		OutPackageName = PackageName;
 		OutAssetName   = AssetName;
 		return true;
+	}
+
+	/**
+	 * 从路径加载类
+	 */
+	template<typename T>
+	static UClass* LoadClassFromPath(const FString& InPath)
+	{
+		FString PackageName, AssetName, ObjectPath;
+		if (ParseAssetPath(InPath, PackageName, AssetName, ObjectPath))
+		{
+			return LoadClass<T>(nullptr, *ObjectPath);
+		}
+		return nullptr;
+	}
+
+	/**
+	 * 从路径加载对象
+	 */
+	template<typename T>
+	static T* LoadObjectFromPath(const FString& InPath)
+	{
+		FString PackageName, AssetName, ObjectPath;
+		if (ParseAssetPath(InPath, PackageName, AssetName, ObjectPath))
+		{
+			return Cast<T>(StaticLoadObject(T::StaticClass(), nullptr, *ObjectPath));
+		}
+		return nullptr;
+	}
+
+	/**
+	 * 获取基础配置与 DataTable
+	 */
+	static bool GetSettingsAndDataTable(const UAbilityEditorHelperSettings*& OutSettings, UDataTable*& OutDataTable)
+	{
+		OutSettings = GetDefault<UAbilityEditorHelperSettings>();
+		if (!OutSettings)
+		{
+			return false;
+		}
+
+		OutDataTable = OutSettings->GameplayEffectDataTable.IsValid() ? OutSettings->GameplayEffectDataTable.Get() : nullptr;
+		if (!OutDataTable)
+		{
+			OutDataTable = OutSettings->GameplayEffectDataTable.LoadSynchronous();
+		}
+
+		return OutDataTable != nullptr;
+	}
+
+	/**
+	 * 获取 GE 资产的基础存放路径
+	 */
+	static FString GetGameplayEffectBasePath(const UAbilityEditorHelperSettings* Settings)
+	{
+		if (!Settings) return TEXT("/Game/GameplayEffects");
+		
+		FString BasePath = Settings->GameplayEffectPath;
+		if (BasePath.IsEmpty())
+		{
+			BasePath = TEXT("/Game/GameplayEffects");
+		}
+		if (!BasePath.StartsWith(TEXT("/")))
+		{
+			BasePath = TEXT("/Game/") + BasePath;
+		}
+		// 去掉末尾斜杠
+		if (BasePath.EndsWith(TEXT("/")))
+		{
+			BasePath.LeftChopInline(1);
+		}
+		return BasePath;
+	}
+
+#if WITH_EDITOR
+	/**
+	 * 清理指定目录下不在 DataTable 中的 GE 资产
+	 */
+	static void CleanupGameplayEffectFolder(const FString& BasePath, const UDataTable* DataTable)
+	{
+		if (BasePath.IsEmpty() || !DataTable) return;
+
+		// 预构建 DataTable 中期望存在的 GE 资产名集合（与创建时的命名规则一致）
+		TSet<FName> DesiredAssetNames;
+		for (const TPair<FName, uint8*>& RowPair : DataTable->GetRowMap())
+		{
+			FString RowAssetName = RowPair.Key.ToString();
+			if (!RowAssetName.Contains(TEXT("GE_")))
+			{
+				RowAssetName = TEXT("GE_") + RowAssetName;
+			}
+			DesiredAssetNames.Add(FName(*RowAssetName));
+		}
+
+		FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+		IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+		FARFilter Filter;
+		Filter.bRecursivePaths = true;
+		Filter.PackagePaths.Add(FName(*BasePath));
+		Filter.ClassPaths.Add(UGameplayEffect::StaticClass()->GetClassPathName());
+
+		TArray<FAssetData> Assets;
+		AssetRegistry.GetAssets(Filter, Assets);
+
+		TArray<UObject*> ObjectsToDelete;
+		ObjectsToDelete.Reserve(Assets.Num());
+		for (const FAssetData& AssetData : Assets)
+		{
+			// 若该 GE 名称不在 DataTable 目标集合中，则标记删除
+			if (!DesiredAssetNames.Contains(AssetData.AssetName))
+			{
+				if (UObject* Obj = AssetData.GetAsset())
+				{
+					ObjectsToDelete.Add(Obj);
+				}
+			}
+		}
+
+		if (ObjectsToDelete.Num() > 0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[AbilityEditorHelper] 清理 %d 个未在 DataTable 中的 GE 资产。"), ObjectsToDelete.Num());
+			ObjectTools::DeleteObjectsUnchecked(ObjectsToDelete);
+		}
+	}
+#endif
+
+	/**
+	 * 将配置转换为 GameplayEffectQuery
+	 */
+	static FGameplayEffectQuery ToGameplayEffectQuery(const FEffectQueryConfig& Config)
+	{
+		FGameplayEffectQuery Query;
+		Query.OwningTagQuery = FGameplayTagQuery::MakeQuery_MatchAnyTags(Config.MatchAnyOwningTags);
+
+		if (!Config.MatchAllOwningTags.IsEmpty())
+		{
+			Query.OwningTagQuery = FGameplayTagQuery::MakeQuery_MatchAllTags(Config.MatchAllOwningTags);
+		}
+
+		Query.EffectTagQuery = FGameplayTagQuery::MakeQuery_MatchAnyTags(Config.MatchAnySourceTags);
+
+		if (!Config.MatchAllSourceTags.IsEmpty())
+		{
+			Query.EffectTagQuery = FGameplayTagQuery::MakeQuery_MatchAllTags(Config.MatchAllSourceTags);
+		}
+		
+		return Query;
+	}
+
+	/**
+	 * 从 GameplayEffect 中移除指定类型的 GEComponent
+	 * @param GE        目标 GameplayEffect
+	 * @return          是否成功移除（找到并移除返回 true）
+	 */
+	template<typename T>
+	static bool RemoveGEComponent(UGameplayEffect* GE)
+	{
+		if (!GE)
+		{
+			return false;
+		}
+
+		// 通过反射获取 GEComponents 数组
+		FArrayProperty* GEComponentsProp = CastField<FArrayProperty>(
+			UGameplayEffect::StaticClass()->FindPropertyByName(TEXT("GEComponents"))
+		);
+
+		if (!GEComponentsProp)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 无法通过反射找到 GEComponents 属性"));
+			return false;
+		}
+
+		TArray<TObjectPtr<UGameplayEffectComponent>>* ComponentsPtr =
+			GEComponentsProp->ContainerPtrToValuePtr<TArray<TObjectPtr<UGameplayEffectComponent>>>(GE);
+
+		if (!ComponentsPtr)
+		{
+			return false;
+		}
+
+		// 查找并移除指定类型的组件
+		for (int32 i = ComponentsPtr->Num() - 1; i >= 0; --i)
+		{
+			if ((*ComponentsPtr)[i] && (*ComponentsPtr)[i]->IsA<T>())
+			{
+				ComponentsPtr->RemoveAt(i);
+				return true;
+			}
+		}
+
+		return false;
 	}
 }
 
@@ -206,42 +406,35 @@ UGameplayEffect* UAbilityEditorHelperLibrary::CreateOrImportGameplayEffect(const
 	// 若已存在且提供了 ParentClass，比较现有 GE 的父类与配置的父类，不一致则删除资产以触发重建
 	if (GE && !Config.ParentClass.IsEmpty())
 	{
-		FString DesiredPkg, DesiredName, DesiredObjPath;
-		if (ParseAssetPath(Config.ParentClass, DesiredPkg, DesiredName, DesiredObjPath))
+		UClass* DesiredParentClass = LoadClassFromPath<UGameplayEffect>(Config.ParentClass);
+
+		// 回退：若不是类路径，则当作 GE 资产路径加载，再取其 Class
+		if (!DesiredParentClass)
 		{
-			UClass* DesiredParentClass = nullptr;
-
-			// 优先尝试直接加载类（支持 /Script/Module.Class 的写法）
-			DesiredParentClass = LoadClass<UGameplayEffect>(nullptr, *DesiredObjPath);
-
-			// 回退：若不是类路径，则当作 GE 资产路径加载，再取其 Class
-			if (!DesiredParentClass)
+			if (UGameplayEffect* ParentGEObj = LoadObjectFromPath<UGameplayEffect>(Config.ParentClass))
 			{
-				if (UGameplayEffect* ParentGEObj = Cast<UGameplayEffect>(StaticLoadObject(UGameplayEffect::StaticClass(), nullptr, *DesiredObjPath)))
-				{
-					DesiredParentClass = ParentGEObj->GetClass();
-				}
+				DesiredParentClass = ParentGEObj->GetClass();
 			}
+		}
 
-			if (DesiredParentClass)
+		if (DesiredParentClass)
+		{
+			UClass* ExistingClass = GE->GetClass();
+			UClass* ExistingParentClass = ExistingClass ? ExistingClass->GetSuperClass() : nullptr;
+
+			if (ExistingParentClass != DesiredParentClass)
 			{
-				UClass* ExistingClass = GE->GetClass();
-				UClass* ExistingParentClass = ExistingClass ? ExistingClass->GetSuperClass() : nullptr;
+				UE_LOG(LogTemp, Log, TEXT("[AbilityEditorHelper] 现有 GE 父类与配置不一致，删除并重建：%s"), *GameplayEffectPath);
 
-				if (ExistingParentClass != DesiredParentClass)
-				{
-					UE_LOG(LogTemp, Log, TEXT("[AbilityEditorHelper] 现有 GE 父类与配置不一致，删除并重建：%s"), *GameplayEffectPath);
-
-					TArray<UObject*> ToDelete;
-					ToDelete.Add(GE);
-					ObjectTools::DeleteObjectsUnchecked(ToDelete);
-					GE = nullptr; // 置空以走创建流程
-				}
+				TArray<UObject*> ToDelete;
+				ToDelete.Add(GE);
+				ObjectTools::DeleteObjectsUnchecked(ToDelete);
+				GE = nullptr; // 置空以走创建流程
 			}
-			else
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 无法加载 ParentClass 指定的类型：%s"), *Config.ParentClass);
-			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 无法加载 ParentClass 指定的类型：%s"), *Config.ParentClass);
 		}
 	}
 
@@ -262,26 +455,22 @@ UGameplayEffect* UAbilityEditorHelperLibrary::CreateOrImportGameplayEffect(const
 		// 优先：根据 Config.ParentClass 复制父 GE 资产作为新资产
 		if (!Config.ParentClass.IsEmpty())
 		{
-			FString ParentPackageName, ParentAssetName, ParentObjectPath;
-			if (ParseAssetPath(Config.ParentClass, ParentPackageName, ParentAssetName, ParentObjectPath))
+			if (UClass* ParentGEClass = LoadClassFromPath<UGameplayEffect>(Config.ParentClass))
 			{
-				if (UGameplayEffect* ParentGE = Cast<UGameplayEffect>(StaticLoadObject(UGameplayEffect::StaticClass(), nullptr, *ParentObjectPath)))
+				if (UGameplayEffect* Duplicated = NewObject<UGameplayEffect>(Package, ParentGEClass, FName(*AssetName), RF_Public | RF_Standalone | RF_Transactional))
 				{
-					if (UGameplayEffect* Duplicated = DuplicateObject<UGameplayEffect>(ParentGE, Package, FName(*AssetName)))
-					{
-						GE = Duplicated;
-						// 确保为资产标志
-						GE->SetFlags(RF_Public | RF_Standalone | RF_Transactional);
-					}
-					else
-					{
-						UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 从 ParentClass 复制 GE 失败：%s，将回退到默认创建"), *Config.ParentClass);
-					}
+					GE = Duplicated;
+					// 确保为资产标志
+					GE->SetFlags(RF_Public | RF_Standalone | RF_Transactional);
 				}
 				else
 				{
-					UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 无法加载 ParentClass GE：%s，将回退到默认创建"), *Config.ParentClass);
+					UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 从 ParentClass 复制 GE 失败：%s，将回退到默认创建"), *Config.ParentClass);
 				}
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 无法加载 ParentClass GE：%s，将回退到默认创建"), *Config.ParentClass);
 			}
 		}
 
@@ -322,28 +511,124 @@ UGameplayEffect* UAbilityEditorHelperLibrary::CreateOrImportGameplayEffect(const
 		GE->StackDurationRefreshPolicy = Config.StackDurationRefreshPolicy;
 		GE->StackPeriodResetPolicy = Config.StackPeriodResetPolicy;
 
-		// === Tag 需求配置 ===
-		// 注意：UE 5.7+ 中许多API已经改变，暂时跳过Tag Requirements的设置
-		// TODO: 需要根据UE 5.7的新Component API重新实现
-		// Application/Ongoing/Removal Tag Requirements 在UE 5.7中需要使用新的Component系统
+		// === Tag 需求配置（UE 5.7+ 使用 Component API）===
+		{
+			// 检查是否有任何 Tag Requirements 配置
+			bool bHasAnyTagRequirements =
+				!Config.ApplicationTagRequirements.RequireTags.IsEmpty() ||
+				!Config.ApplicationTagRequirements.IgnoreTags.IsEmpty() ||
+				!Config.OngoingTagRequirements.RequireTags.IsEmpty() ||
+				!Config.OngoingTagRequirements.IgnoreTags.IsEmpty() ||
+				!Config.RemovalTagRequirements.RequireTags.IsEmpty() ||
+				!Config.RemovalTagRequirements.IgnoreTags.IsEmpty();
 
-		// === Cancel/Block Abilities ===
-		// 注意：在UE 5.7中这些API已废弃，暂时跳过
-		// TODO: 需要根据UE 5.7的新Component API重新实现
+			if (bHasAnyTagRequirements)
+			{
+				UTargetTagRequirementsGameplayEffectComponent& TagReqComp = GE->FindOrAddComponent<UTargetTagRequirementsGameplayEffectComponent>();
 
-		// === Granted Abilities ===
-		// 注意：GrantedAbilities在UE 5.7中已废弃，需要使用AbilitiesGameplayEffectComponent
-		// 暂时跳过以便编译通过
-		// TODO: 使用 UAbilitiesGameplayEffectComponent 重新实现
+				// Application Tag Requirements
+				TagReqComp.ApplicationTagRequirements.RequireTags = Config.ApplicationTagRequirements.RequireTags;
+				TagReqComp.ApplicationTagRequirements.IgnoreTags = Config.ApplicationTagRequirements.IgnoreTags;
 
-		// Tags：5.3+ 使用 GE 组件写入；更早版本回退到旧容器
-#if (ENGINE_MAJOR_VERSION > 5) || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3)
+				// Ongoing Tag Requirements
+				TagReqComp.OngoingTagRequirements.RequireTags = Config.OngoingTagRequirements.RequireTags;
+				TagReqComp.OngoingTagRequirements.IgnoreTags = Config.OngoingTagRequirements.IgnoreTags;
+
+				// Removal Tag Requirements
+				TagReqComp.RemovalTagRequirements.RequireTags = Config.RemovalTagRequirements.RequireTags;
+				TagReqComp.RemovalTagRequirements.IgnoreTags = Config.RemovalTagRequirements.IgnoreTags;
+			}
+			else
+			{
+				RemoveGEComponent<UTargetTagRequirementsGameplayEffectComponent>(GE);
+			}
+		}
+
+		// === Block Abilities（UE 5.7+ 使用 BlockAbilityTagsGameplayEffectComponent）===
+		if (!Config.BlockAbilitiesWithTags.IsEmpty())
+		{
+			UBlockAbilityTagsGameplayEffectComponent& BlockComp = GE->FindOrAddComponent<UBlockAbilityTagsGameplayEffectComponent>();
+			FInheritedTagContainer& BlockTagContainer = const_cast<FInheritedTagContainer&>(BlockComp.GetConfiguredBlockedAbilityTagChanges());
+			BlockTagContainer.Added = Config.BlockAbilitiesWithTags;
+		}
+		else
+		{
+			RemoveGEComponent<UBlockAbilityTagsGameplayEffectComponent>(GE);
+		}
+
+		// === Cancel Abilities（UE 5.7+ 使用 CancelAbilityTagsGameplayEffectComponent）===
+		if (!Config.CancelAbilitiesWithTags.IsEmpty())
+		{
+			UCancelAbilityTagsGameplayEffectComponent& CancelComp = GE->FindOrAddComponent<UCancelAbilityTagsGameplayEffectComponent>();
+
+			FInheritedTagContainer CancelAbilityTags;
+			CancelAbilityTags.Added = Config.CancelAbilitiesWithTags;
+			CancelComp.SetAndApplyCanceledAbilityTagChanges(CancelAbilityTags, FInheritedTagContainer());
+		}
+		else
+		{
+			RemoveGEComponent<UCancelAbilityTagsGameplayEffectComponent>(GE);
+		}
+
+		// === Granted Abilities（UE 5.7+ 使用 AbilitiesGameplayEffectComponent）===
+		if (Config.GrantedAbilityClasses.Num() > 0)
+		{
+			UAbilitiesGameplayEffectComponent& AbilitiesComp = GE->FindOrAddComponent<UAbilitiesGameplayEffectComponent>();
+			TArray<FGameplayAbilitySpecConfig> AbilityConfigs;
+
+			for (const FString& AbilityClassPath : Config.GrantedAbilityClasses)
+			{
+				if (UClass* AbilityClass = LoadClassFromPath<UGameplayAbility>(AbilityClassPath))
+				{
+					FGameplayAbilitySpecConfig SpecConfig;
+					SpecConfig.Ability = AbilityClass;
+					AbilityConfigs.Add(SpecConfig);
+				}
+				else if (!AbilityClassPath.IsEmpty())
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 无法加载 Ability 类：%s"), *AbilityClassPath);
+				}
+			}
+
+			// 通过 UE 反射访问 protected 成员 GrantAbilityConfigs
+			if (AbilityConfigs.Num() > 0)
+			{
+				FArrayProperty* GrantAbilityConfigsProp = CastField<FArrayProperty>(
+					UAbilitiesGameplayEffectComponent::StaticClass()->FindPropertyByName(TEXT("GrantAbilityConfigs"))
+				);
+
+				if (GrantAbilityConfigsProp)
+				{
+					TArray<FGameplayAbilitySpecConfig>* GrantAbilityConfigsPtr =
+						GrantAbilityConfigsProp->ContainerPtrToValuePtr<TArray<FGameplayAbilitySpecConfig>>(&AbilitiesComp);
+
+					if (GrantAbilityConfigsPtr)
+					{
+						*GrantAbilityConfigsPtr = AbilityConfigs;
+					}
+				}
+				else
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 无法通过反射找到 GrantAbilityConfigs 属性"));
+				}
+			}
+		}
+		else
+		{
+			RemoveGEComponent<UAbilitiesGameplayEffectComponent>(GE);
+		}
+
+		// === Tags 组件配置 ===
 		// 目标（Granted）Tags 组件
 		if (!Config.GrantedTags.IsEmpty())
 		{
 			UTargetTagsGameplayEffectComponent& TargetTagsComp = GE->FindOrAddComponent<UTargetTagsGameplayEffectComponent>();
 			FInheritedTagContainer& TargetTags = const_cast<FInheritedTagContainer&>(TargetTagsComp.GetConfiguredTargetTagChanges());
 			TargetTags.Added = Config.GrantedTags;
+		}
+		else
+		{
+			RemoveGEComponent<UTargetTagsGameplayEffectComponent>(GE);
 		}
 
 		// 资产（Owned/Asset）Tags 组件
@@ -353,23 +638,25 @@ UGameplayEffect* UAbilityEditorHelperLibrary::CreateOrImportGameplayEffect(const
 			FInheritedTagContainer& AssetTags =	const_cast<FInheritedTagContainer&>(AssetTagsComp.GetConfiguredAssetTagChanges());
 			AssetTags.Added = Config.AssetTags;
 		}
-#else
-		// 旧版（无 GE 组件）：写入继承容器
-		GE->InheritableOwnedTagsContainer.Added   = Config.AssetTags;
-		GE->InheritableGrantedTagsContainer.Added = Config.GrantedTags;
-#endif
+		else
+		{
+			RemoveGEComponent<UAssetTagsGameplayEffectComponent>(GE);
+		}
 
 		// === 增强的 Modifiers ===
 		GE->Modifiers.Reset();
 		for (const FGEModifierConfig& Mod : Config.Modifiers)
 		{
-			if (!Mod.Attribute.IsValid())
+			// 通过简化字符串解析 Attribute
+			FGameplayAttribute ParsedAttribute;
+			if (!ParseAttributeString(Mod.Attribute, ParsedAttribute))
 			{
+				UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 跳过无效的 Modifier Attribute：%s"), *Mod.Attribute);
 				continue;
 			}
 
 			FGameplayModifierInfo Info;
-			Info.Attribute = Mod.Attribute;
+			Info.Attribute = ParsedAttribute;
 			Info.ModifierOp = Mod.ModifierOp;
 
 			// Magnitude 设置（根据类型）
@@ -386,13 +673,23 @@ UGameplayEffect* UAbilityEditorHelperLibrary::CreateOrImportGameplayEffect(const
 				AttrBased.PreMultiplyAdditiveValue = FScalableFloat(Mod.AttributeBasedConfig.PreMultiplyAdditiveValue);
 				AttrBased.PostMultiplyAdditiveValue = FScalableFloat(Mod.AttributeBasedConfig.PostMultiplyAdditiveValue);
 
-				// 创建 Attribute Capture Definition
-				FGameplayEffectAttributeCaptureDefinition CaptureDef;
-				CaptureDef.AttributeToCapture = Mod.AttributeBasedConfig.BackingAttribute;
-				CaptureDef.AttributeSource = EGameplayEffectAttributeCaptureSource::Source;
-				CaptureDef.bSnapshot = false;
+				// 解析 BackingAttribute 字符串
+				FGameplayAttribute BackingAttribute;
+				if (ParseAttributeString(Mod.AttributeBasedConfig.BackingAttribute, BackingAttribute))
+				{
+					// 创建 Attribute Capture Definition
+					FGameplayEffectAttributeCaptureDefinition CaptureDef;
+					CaptureDef.AttributeToCapture = BackingAttribute;
+					CaptureDef.AttributeSource = EGameplayEffectAttributeCaptureSource::Source;
+					CaptureDef.bSnapshot = false;
 
-				AttrBased.BackingAttribute = CaptureDef;
+					AttrBased.BackingAttribute = CaptureDef;
+				}
+				else
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 无法解析 BackingAttribute：%s"), *Mod.AttributeBasedConfig.BackingAttribute);
+				}
+
 				AttrBased.AttributeCalculationType = Mod.AttributeBasedConfig.AttributeCalculationType;
 
 				Info.ModifierMagnitude = FGameplayEffectModifierMagnitude(AttrBased);
@@ -411,18 +708,11 @@ UGameplayEffect* UAbilityEditorHelperLibrary::CreateOrImportGameplayEffect(const
 
 			case EGameplayEffectMagnitudeCalculation::CustomCalculationClass:
 			{
-				if (!Mod.CustomCalculationClass.IsEmpty())
+				if (UClass* CalcClass = LoadClassFromPath<UGameplayModMagnitudeCalculation>(Mod.CustomCalculationClass))
 				{
-					FString CalcPackageName, CalcAssetName, CalcObjectPath;
-					if (ParseAssetPath(Mod.CustomCalculationClass, CalcPackageName, CalcAssetName, CalcObjectPath))
-					{
-						if (UClass* CalcClass = LoadClass<UGameplayModMagnitudeCalculation>(nullptr, *CalcObjectPath))
-						{
-							FCustomCalculationBasedFloat CustomCalc;
-							CustomCalc.CalculationClassMagnitude = CalcClass;
-							Info.ModifierMagnitude = FGameplayEffectModifierMagnitude(CustomCalc);
-						}
-					}
+					FCustomCalculationBasedFloat CustomCalc;
+					CustomCalc.CalculationClassMagnitude = CalcClass;
+					Info.ModifierMagnitude = FGameplayEffectModifierMagnitude(CustomCalc);
 				}
 				break;
 			}
@@ -455,12 +745,41 @@ UGameplayEffect* UAbilityEditorHelperLibrary::CreateOrImportGameplayEffect(const
 			}
 		}
 
-		// === Effect Queries ===
-		// 注意：在UE 5.7中，FGameplayEffectQuery的API已经改变
-		// GrantedApplicationImmunityQuery 和 RemoveGameplayEffectsWithQuery 已废弃
-		// 需要使用新的Component系统（UImmunityGameplayEffectComponent、URemoveOtherGameplayEffectComponent）
-		// 暂时跳过以便编译通过
-		// TODO: 使用UE 5.7的新Component API重新实现
+		// === Immunity Queries（UE 5.7+ 使用 ImmunityGameplayEffectComponent）===
+		if (Config.ImmunityQueries.Num() > 0)
+		{
+			UImmunityGameplayEffectComponent& ImmunityComp = GE->FindOrAddComponent<UImmunityGameplayEffectComponent>();
+			TArray<FGameplayEffectQuery> Queries;
+
+			for (const FEffectQueryConfig& QueryConfig : Config.ImmunityQueries)
+			{
+				Queries.Add(ToGameplayEffectQuery(QueryConfig));
+			}
+
+			ImmunityComp.ImmunityQueries = Queries;
+		}
+		else
+		{
+			RemoveGEComponent<UImmunityGameplayEffectComponent>(GE);
+		}
+
+		// === Remove Effects Queries（UE 5.7+ 使用 RemoveOtherGameplayEffectComponent）===
+		if (Config.RemovalQueries.Num() > 0)
+		{
+			URemoveOtherGameplayEffectComponent& RemoveComp = GE->FindOrAddComponent<URemoveOtherGameplayEffectComponent>();
+			TArray<FGameplayEffectQuery> Queries;
+
+			for (const FEffectQueryConfig& QueryConfig : Config.RemovalQueries)
+			{
+				Queries.Add(ToGameplayEffectQuery(QueryConfig));
+			}
+
+			RemoveComp.RemoveGameplayEffectQueries = Queries;
+		}
+		else
+		{
+			RemoveGEComponent<URemoveOtherGameplayEffectComponent>(GE);
+		}
 
 		// === Executions ===
 		if (Config.Executions.Num() > 0)
@@ -498,28 +817,13 @@ UGameplayEffect* UAbilityEditorHelperLibrary::CreateOrImportGameplayEffect(const
 #endif
 }
 
-void UAbilityEditorHelperLibrary::CreateOrUpdateGameplayEffectsFromSettings()
+void UAbilityEditorHelperLibrary::CreateOrUpdateGameplayEffectsFromSettings(bool bClearGameplayEffectFolderFirst)
 {
-	const UAbilityEditorHelperSettings* Settings = GetDefault<UAbilityEditorHelperSettings>();
-	if (!Settings)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] Settings 未找到。"));
-		return;
-	}
-
-	// 加载 DataTable（优先使用已加载对象，否则同步加载）
+	const UAbilityEditorHelperSettings* Settings = nullptr;
 	UDataTable* DataTable = nullptr;
-	if (Settings->GameplayEffectDataTable.IsValid())
+	if (!GetSettingsAndDataTable(Settings, DataTable))
 	{
-		DataTable = Settings->GameplayEffectDataTable.Get();
-	}
-	if (!DataTable)
-	{
-		DataTable = Settings->GameplayEffectDataTable.LoadSynchronous();
-	}
-	if (!DataTable)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] GameplayEffectDataTable 未设置或加载失败。"));
+		UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] Settings 未找到或 DataTable 未设置。"));
 		return;
 	}
 
@@ -531,20 +835,15 @@ void UAbilityEditorHelperLibrary::CreateOrUpdateGameplayEffectsFromSettings()
 	}
 
 	// 规范化基础路径
-	FString BasePath = Settings->GameplayEffectPath;
-	if (BasePath.IsEmpty())
+	FString BasePath = GetGameplayEffectBasePath(Settings);
+
+#if WITH_EDITOR
+	// 可选：在导入前清理 BasePath 下（含子目录）中不在 DataTable 的 GE 资产
+	if (bClearGameplayEffectFolderFirst)
 	{
-		BasePath = TEXT("/Game/GameplayEffects");
+		CleanupGameplayEffectFolder(BasePath, DataTable);
 	}
-	if (!BasePath.StartsWith(TEXT("/")))
-	{
-		BasePath = TEXT("/Game/") + BasePath;
-	}
-	// 去掉末尾斜杠
-	if (BasePath.EndsWith(TEXT("/")))
-	{
-		BasePath.LeftChopInline(1);
-	}
+#endif
 
 	// 遍历每一行并创建/更新 GE，打印结果
 	for (const TPair<FName, uint8*>& RowPair : DataTable->GetRowMap())
@@ -976,4 +1275,341 @@ bool UAbilityEditorHelperLibrary::ImportDataTableFromJsonFile(UDataTable* Target
 #endif
 
 	return bSuccess;
+}
+
+bool UAbilityEditorHelperLibrary::ParseAttributeString(const FString& AttributeString, FGameplayAttribute& OutAttribute)
+{
+	OutAttribute = FGameplayAttribute();
+
+	if (AttributeString.IsEmpty())
+	{
+		return false;
+	}
+
+	// 支持两种格式：
+	// 1. 简化格式：ClassName.PropertyName（如 TestAttributeSet.TestPropertyOne）
+	// 2. 完整格式：/Script/Module.ClassName:PropertyName
+
+	FString ClassName;
+	FString PropertyName;
+
+	// 检查是否是完整路径格式
+	if (AttributeString.Contains(TEXT(":")))
+	{
+		// 完整格式：/Script/Module.ClassName:PropertyName
+		FString LeftPart;
+		if (!AttributeString.Split(TEXT(":"), &LeftPart, &PropertyName))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 无法解析完整格式的属性字符串：%s"), *AttributeString);
+			return false;
+		}
+
+		// 从路径中提取类名（最后一个.后的部分）
+		int32 LastDotIndex;
+		if (LeftPart.FindLastChar(TEXT('.'), LastDotIndex))
+		{
+			ClassName = LeftPart.Mid(LastDotIndex + 1);
+		}
+		else
+		{
+			ClassName = LeftPart;
+		}
+	}
+	else if (AttributeString.Contains(TEXT(".")))
+	{
+		// 简化格式：ClassName.PropertyName
+		if (!AttributeString.Split(TEXT("."), &ClassName, &PropertyName))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 无法解析简化格式的属性字符串：%s"), *AttributeString);
+			return false;
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 属性字符串格式无效：%s"), *AttributeString);
+		return false;
+	}
+
+	// 确保类名以 U 开头（UE 类命名规范）
+	FString FullClassName = ClassName;
+	if (!FullClassName.StartsWith(TEXT("U")))
+	{
+		FullClassName = TEXT("U") + ClassName;
+	}
+
+	// 只遍历 UAttributeSet 的派生类（性能优化）
+	UClass* FoundClass = nullptr;
+	TArray<UClass*> AttributeSetClasses;
+	GetDerivedClasses(UAttributeSet::StaticClass(), AttributeSetClasses, true);
+
+	for (UClass* Class : AttributeSetClasses)
+	{
+		if (!Class || Class->HasAnyClassFlags(CLASS_Abstract))
+		{
+			continue;
+		}
+
+		const FString CurrentClassName = Class->GetName();
+		// 比较类名（带U前缀或不带都支持）
+		if (CurrentClassName.Equals(FullClassName, ESearchCase::IgnoreCase) ||
+			CurrentClassName.Equals(ClassName, ESearchCase::IgnoreCase))
+		{
+			FoundClass = Class;
+			break;
+		}
+	}
+
+	if (!FoundClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 无法找到 AttributeSet 类：%s"), *ClassName);
+		return false;
+	}
+
+	// 从类中查找属性
+	FProperty* FoundProperty = FoundClass->FindPropertyByName(FName(*PropertyName));
+	if (!FoundProperty)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 在类 %s 中无法找到属性：%s"), *FoundClass->GetName(), *PropertyName);
+		return false;
+	}
+
+	// 验证是 FGameplayAttributeData 类型的属性
+	const FStructProperty* StructProperty = CastField<FStructProperty>(FoundProperty);
+	if (!StructProperty || StructProperty->Struct != FGameplayAttributeData::StaticStruct())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 属性 %s.%s 不是 FGameplayAttributeData 类型"),
+			*FoundClass->GetName(), *PropertyName);
+		return false;
+	}
+
+	// 构建 FGameplayAttribute
+	OutAttribute = FGameplayAttribute(FoundProperty);
+
+	UE_LOG(LogTemp, Log, TEXT("[AbilityEditorHelper] 成功解析属性：%s -> %s.%s"),
+		*AttributeString, *FoundClass->GetName(), *PropertyName);
+
+	return true;
+}
+
+// ===================== 增量更新实现 =====================
+
+namespace
+{
+	/**
+	 * 将 FGameplayEffectConfig 序列化为 JSON 字符串（用于比较）
+	 */
+	static FString SerializeConfigToJsonString(const FGameplayEffectConfig& Config)
+	{
+		FString JsonString;
+		if (FJsonObjectConverter::UStructToJsonObjectString(FGameplayEffectConfig::StaticStruct(), &Config, JsonString, 0, 0))
+		{
+			return JsonString;
+		}
+		return TEXT("");
+	}
+
+	/**
+	 * 比较两个 FGameplayEffectConfig 是否相同
+	 * 通过序列化为 JSON 字符串后比较来实现
+	 */
+	static bool AreConfigsEqual(const FGameplayEffectConfig& A, const FGameplayEffectConfig& B)
+	{
+		const FString JsonA = SerializeConfigToJsonString(A);
+		const FString JsonB = SerializeConfigToJsonString(B);
+		return JsonA.Equals(JsonB);
+	}
+}
+
+bool UAbilityEditorHelperLibrary::ImportAndUpdateGameplayEffectsFromJson(
+	const FString& JsonFileName,
+	bool bClearGameplayEffectFolderFirst,
+	TArray<FName>& OutUpdatedRowNames)
+{
+	OutUpdatedRowNames.Reset();
+
+	const UAbilityEditorHelperSettings* Settings = nullptr;
+	UDataTable* DataTable = nullptr;
+	if (!GetSettingsAndDataTable(Settings, DataTable))
+	{
+		UE_LOG(LogAbilityEditor, Error, TEXT("无法获取 Settings 或 DataTable"));
+		return false;
+	}
+
+	// 校验行结构
+	if (!DataTable->GetRowStruct() || DataTable->GetRowStruct() != FGameplayEffectConfig::StaticStruct())
+	{
+		UE_LOG(LogAbilityEditor, Error, TEXT("DataTable 行结构不是 FGameplayEffectConfig"));
+		return false;
+	}
+
+	// 构建 JSON 文件完整路径
+	if (Settings->JsonPath.IsEmpty())
+	{
+		UE_LOG(LogAbilityEditor, Error, TEXT("UAbilityEditorHelperSettings 的 JsonPath 未配置"));
+		return false;
+	}
+	const FString JsonFilePath = FPaths::Combine(Settings->JsonPath, JsonFileName);
+
+	if (!FPaths::FileExists(JsonFilePath))
+	{
+		UE_LOG(LogAbilityEditor, Error, TEXT("JSON 文件不存在：%s"), *JsonFilePath);
+		return false;
+	}
+
+	// 读取 JSON 文件内容
+	FString JsonContent;
+	if (!FFileHelper::LoadFileToString(JsonContent, *JsonFilePath))
+	{
+		UE_LOG(LogAbilityEditor, Error, TEXT("无法读取 JSON 文件：%s"), *JsonFilePath);
+		return false;
+	}
+
+	// 解析 JSON 为数组
+	TArray<TSharedPtr<FJsonValue>> JsonArray;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonContent);
+	if (!FJsonSerializer::Deserialize(Reader, JsonArray))
+	{
+		UE_LOG(LogAbilityEditor, Error, TEXT("JSON 解析失败，格式不正确"));
+		return false;
+	}
+
+	// 缓存现有 DataTable 数据（用于比较）
+	TMap<FName, FGameplayEffectConfig> ExistingConfigs;
+	for (const TPair<FName, uint8*>& RowPair : DataTable->GetRowMap())
+	{
+		if (RowPair.Value)
+		{
+			const FGameplayEffectConfig* ExistingConfig = reinterpret_cast<const FGameplayEffectConfig*>(RowPair.Value);
+			ExistingConfigs.Add(RowPair.Key, *ExistingConfig);
+		}
+	}
+
+	// 解析 JSON 数据并找出变化的行
+	TMap<FName, FGameplayEffectConfig> NewConfigs;
+	for (const TSharedPtr<FJsonValue>& JsonValue : JsonArray)
+	{
+		if (!JsonValue.IsValid() || JsonValue->Type != EJson::Object)
+		{
+			continue;
+		}
+
+		const TSharedPtr<FJsonObject>& JsonObject = JsonValue->AsObject();
+		if (!JsonObject.IsValid())
+		{
+			continue;
+		}
+
+		// 获取行名（Name 字段）
+		FString RowNameStr;
+		if (!JsonObject->TryGetStringField(TEXT("Name"), RowNameStr) || RowNameStr.IsEmpty())
+		{
+			UE_LOG(LogAbilityEditor, Warning, TEXT("JSON 条目缺少 Name 字段，已跳过"));
+			continue;
+		}
+
+		// 反序列化为 FGameplayEffectConfig
+		FGameplayEffectConfig NewConfig;
+		if (!FJsonObjectConverter::JsonObjectToUStruct(JsonObject.ToSharedRef(), FGameplayEffectConfig::StaticStruct(), &NewConfig))
+		{
+			UE_LOG(LogAbilityEditor, Warning, TEXT("无法反序列化行 %s，已跳过"), *RowNameStr);
+			continue;
+		}
+
+		FName RowName(*RowNameStr);
+		NewConfigs.Add(RowName, NewConfig);
+
+		// 比较是否有变化
+		const FGameplayEffectConfig* ExistingConfig = ExistingConfigs.Find(RowName);
+		if (!ExistingConfig || !AreConfigsEqual(*ExistingConfig, NewConfig))
+		{
+			// 新增或变化的行
+			OutUpdatedRowNames.Add(RowName);
+			UE_LOG(LogAbilityEditor, Log, TEXT("检测到变化的行：%s"), *RowNameStr);
+		}
+	}
+
+	// 如果没有变化，直接返回
+	if (OutUpdatedRowNames.Num() == 0)
+	{
+		UE_LOG(LogAbilityEditor, Log, TEXT("未检测到任何数据变化，无需更新"));
+		return true;
+	}
+
+	UE_LOG(LogAbilityEditor, Log, TEXT("共检测到 %d 行数据变化"), OutUpdatedRowNames.Num());
+
+#if WITH_EDITOR
+	// 更新 DataTable 中变化的行
+	for (const FName& RowName : OutUpdatedRowNames)
+	{
+		const FGameplayEffectConfig* NewConfig = NewConfigs.Find(RowName);
+		if (!NewConfig)
+		{
+			continue;
+		}
+
+		// 检查行是否存在
+		uint8* ExistingRowData = DataTable->FindRowUnchecked(RowName);
+		if (ExistingRowData)
+		{
+			// 更新现有行
+			FGameplayEffectConfig* ExistingConfig = reinterpret_cast<FGameplayEffectConfig*>(ExistingRowData);
+			*ExistingConfig = *NewConfig;
+		}
+		else
+		{
+			// 添加新行
+			DataTable->AddRow(RowName, *NewConfig);
+		}
+	}
+
+	DataTable->MarkPackageDirty();
+
+	// 规范化基础路径
+	FString BasePath = GetGameplayEffectBasePath(Settings);
+
+	// 可选：清理不在 DataTable 中的 GE 资产
+	if (bClearGameplayEffectFolderFirst)
+	{
+		CleanupGameplayEffectFolder(BasePath, DataTable);
+	}
+
+	// 只对变化的行创建/更新 GameplayEffect
+	int32 SuccessCount = 0;
+	int32 FailCount = 0;
+	for (const FName& RowName : OutUpdatedRowNames)
+	{
+		const FGameplayEffectConfig* Config = NewConfigs.Find(RowName);
+		if (!Config)
+		{
+			continue;
+		}
+
+		FString RowAssetName = RowName.ToString();
+		if (!RowAssetName.Contains(TEXT("GE_")))
+		{
+			RowAssetName = TEXT("GE_") + RowAssetName;
+		}
+		const FString GEPath = FString::Printf(TEXT("%s/%s"), *BasePath, *RowAssetName);
+
+		bool bOK = false;
+		UGameplayEffect* GE = CreateOrImportGameplayEffect(GEPath, *Config, bOK);
+		if (bOK && GE)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[AbilityEditorHelper] 成功创建/更新 GameplayEffect：%s"), *GEPath);
+			++SuccessCount;
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("[AbilityEditorHelper] 创建/更新失败：%s"), *GEPath);
+			++FailCount;
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[AbilityEditorHelper] 增量更新完成：成功 %d 个，失败 %d 个"), SuccessCount, FailCount);
+
+	return FailCount == 0;
+#else
+	OutError = TEXT("此功能仅在编辑器环境下可用");
+	return false;
+#endif
 }

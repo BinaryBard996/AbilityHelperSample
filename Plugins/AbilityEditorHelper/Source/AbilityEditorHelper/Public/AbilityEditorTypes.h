@@ -8,6 +8,8 @@
 #include "UObject/Object.h"
 #include "AbilityEditorTypes.generated.h"
 
+ABILITYEDITORHELPER_API DECLARE_LOG_CATEGORY_EXTERN(LogAbilityEditor, Log, All);
+
 /**
  * 用于导出到 JSON 的字段 Schema 描述（驱动 Excel 模板与导出）
  */
@@ -115,9 +117,10 @@ struct FAttributeBasedModifierConfig
 {
 	GENERATED_BODY()
 
-	// 后备属性（Backing Attribute）
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AttributeBased")
-	FGameplayAttribute BackingAttribute;
+	// 后备属性（Backing Attribute）- 简化格式：ClassName.PropertyName（如 TestAttributeSet.TestPropertyOne）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AttributeBased",
+		meta = (ExcelHint = "Format: ClassName.PropertyName (e.g. TestAttributeSet.TestPropertyOne)"))
+	FString BackingAttribute;
 
 	// 属性计算类型
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AttributeBased")
@@ -233,8 +236,10 @@ struct FGEModifierConfig
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier")
-	FGameplayAttribute Attribute;
+	// 目标属性 - 简化格式：ClassName.PropertyName（如 TestAttributeSet.TestPropertyOne）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier",
+		meta = (ExcelHint = "Format: ClassName.PropertyName (e.g. TestAttributeSet.TestPropertyOne)"))
+	FString Attribute;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier")
 	TEnumAsByte<EGameplayModOp::Type> ModifierOp = EGameplayModOp::Additive;
@@ -276,6 +281,11 @@ struct FGameplayEffectConfig : public FTableRowBase
 	GENERATED_BODY()
 
 	// === 基础配置 ===
+	
+	// 说明/描述（用于在 Excel 中解释此修改器的用途）
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier",
+    	meta = (ExcelHint = "Description of this modifier for documentation"))
+    FString Description;
 
 	// 父类（可选，用于继承默认值）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic",
@@ -381,4 +391,11 @@ struct FGameplayEffectConfig : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Executions")
 	TArray<FExecutionConfig> Executions;
 
+};
+
+USTRUCT(BlueprintType)
+struct FGameplayAbilityConfig : public FTableRowBase
+{
+	GENERATED_BODY()
+	
 };

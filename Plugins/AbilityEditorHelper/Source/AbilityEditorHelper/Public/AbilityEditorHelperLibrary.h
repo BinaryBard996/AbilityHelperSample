@@ -54,9 +54,10 @@ public:
 	/**
 	 * 基于 UAbilityEditorHelperSettings 中的 DataTable 与 GameplayEffectPath，批量创建/更新 GameplayEffect。
 	 * 不返回创建的对象或数量，处理结果通过日志输出。
+	 * @param bClearGameplayEffectFolderFirst  在导入前是否先清理 GameplayEffectPath 路径下（含子目录）中不在 DataTable 的 GE 资产
 	 */
-	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|GameplayEffect", meta=(DisplayName="Create Or Update GameplayEffects From Settings", Keywords="GameplayEffect Import Update From Settings"))
-	static void CreateOrUpdateGameplayEffectsFromSettings();
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|GameplayEffect", meta=(DisplayName="Create Or Update GameplayEffects From Settings", Keywords="GameplayEffect Import Update From Settings", CPP_Default_bClearGameplayEffectFolderFirst="false"))
+	static void CreateOrUpdateGameplayEffectsFromSettings(bool bClearGameplayEffectFolderFirst = false);
 
 	/** 
 	 * 将任意 UStruct 的描述导出为 Schema(JSON)。输入 StructPath 完整路径（如 /Script/Module.StructName）。
@@ -100,5 +101,31 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|DataTable", meta=(DisplayName="Import DataTable From JSON File", Keywords="DataTable Import JSON"))
 	static bool ImportDataTableFromJsonFile(UDataTable* TargetDataTable, const FString& JsonFileName, bool bClearBeforeImport, int32& OutImportedRowCount, FString& OutError);
+
+	/**
+	 * 将简化的属性字符串解析为 FGameplayAttribute
+	 * @param AttributeString  简化格式字符串（如 "TestAttributeSet.TestPropertyOne"）
+	 * @param OutAttribute     输出的 FGameplayAttribute
+	 * @return                 是否解析成功
+	 */
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|Attribute", meta=(DisplayName="Parse Attribute String"))
+	static bool ParseAttributeString(const FString& AttributeString, FGameplayAttribute& OutAttribute);
+
+	/**
+	 * 从 JSON 文件导入数据并更新 GameplayEffects（增量更新）
+	 * 该函数会：
+	 * 1. 读取 JSON 文件
+	 * 2. 与现有 DataTable 数据比较，找出新增或变化的行
+	 * 3. 只对变化的行更新 DataTable
+	 * 4. 只对变化的行创建/更新 GameplayEffect 资产
+	 *
+	 * @param JsonFileName             JSON 文件名（相对于 Settings::JsonPath）
+	 * @param bClearGameplayEffectFolderFirst  是否先清理不在 DataTable 中的 GE 资产
+	 * @param OutUpdatedRowNames       被更新的行名列表
+	 * @param OutError                 错误信息
+	 * @return                         是否成功
+	 */
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|GameplayEffect", meta=(DisplayName="Import And Update GameplayEffects From JSON"))
+	static bool ImportAndUpdateGameplayEffectsFromJson(const FString& JsonFileName, bool bClearGameplayEffectFolderFirst, TArray<FName>& OutUpdatedRowNames);
 
 };
