@@ -139,12 +139,11 @@ def _field_hint(schema: dict, field: dict) -> str:
     # 基本类型数组提示
     if kind == "array":
         inner_kind = (field.get("innerKind") or "").strip()
-        sep = field.get("excelSeparator") or ","
         if inner_kind != "struct":
             inner_enum_vals = field.get("innerEnumValues") or []
             if inner_enum_vals:
-                return f"用 {sep} 分隔，可选值：{' | '.join([str(v) for v in inner_enum_vals])}"
-            return f"用 {sep} 分隔多个值"
+                return f"用逗号分隔，可选值：{' | '.join([str(v) for v in inner_enum_vals])}"
+            return f"用逗号分隔多个值"
 
     return ""
 
@@ -605,20 +604,15 @@ def _to_scalar_from_cell(schema: dict, field: dict, value):
     return value
 
 def _to_primitive_array_from_cell(field: dict, value) -> list:
-    """将单元格值转换为基本类型数组"""
+    """将逗号分隔的单元格值转换为基本类型数组"""
     inner_kind = (field.get("innerKind") or "").strip()
-    sep = (field.get("excelSeparator") or "").strip()
 
-    # 解析分隔的字符串
+    # 解析逗号分隔的字符串
     s = _safe_str(value, "")
     if not s:
         return []
 
-    # 如果指定了特殊分隔符，优先使用；否则默认支持逗号和分号
-    if sep:
-        items = [x.strip() for x in s.split(sep) if x.strip()]
-    else:
-        items = [x.strip() for x in s.replace(";", ",").split(",") if x.strip()]
+    items = [x.strip() for x in s.replace(";", ",").split(",") if x.strip()]
 
     # 根据 innerKind 转换类型
     result = []
