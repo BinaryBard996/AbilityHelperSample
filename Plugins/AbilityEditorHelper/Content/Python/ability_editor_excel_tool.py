@@ -52,6 +52,34 @@ def _safe_sheet_name(name: str, max_len: int = 31) -> str:
         return name
     return name[:max_len]
 
+def _find_matching_sub_sheet(existing_sheets: list, sub_name: str, matched_main_sheet: str) -> str:
+    """
+    智能匹配子表名称
+    Args:
+        existing_sheets: 现有工作表名称列表
+        sub_name: 子表后缀名（如 "Modifiers"）
+        matched_main_sheet: 匹配到的主表名称
+    Returns:
+        匹配到的现有子表名称，如果没找到返回空字符串
+    """
+    # 首先尝试使用匹配到的主表名称查找
+    candidate = _safe_sheet_name(f"{matched_main_sheet}.{sub_name}")
+    if candidate in existing_sheets:
+        return candidate
+
+    # 如果没找到，查找以 ".{sub_name}" 结尾的工作表（处理截断情况）
+    suffix = f".{sub_name}"
+    truncated_suffix = suffix[:31] if len(suffix) > 31 else suffix
+    for sheet in existing_sheets:
+        if sheet.endswith(truncated_suffix) or sheet.endswith(suffix[:len(sheet.split(".")[-1]) + 1] if "." in sheet else ""):
+            # 检查是否是子表（包含 "."）
+            if "." in sheet:
+                # 提取子表名称部分
+                sheet_sub_name = sheet.split(".")[-1]
+                if sub_name.startswith(sheet_sub_name) or sheet_sub_name.startswith(sub_name[:len(sheet_sub_name)]):
+                    return sheet
+    return ""
+
 def _schema_dir_default() -> str:
     # 插件 Content/Python/Schema
     here = os.path.dirname(os.path.abspath(__file__))
@@ -220,11 +248,17 @@ def _read_existing_xlsx_data(xlsx_path: str) -> tuple:
         - col_widths_dict: {sheet_name: {col_name: width, ...}}
     跳过第二行（提示行）
     """
+    # 规范化路径
+    xlsx_path = os.path.normpath(xlsx_path)
+    _log(f"[ExcelTools] _read_existing_xlsx_data: 检查文件 {xlsx_path}")
     if not os.path.exists(xlsx_path):
+        _log(f"[ExcelTools] _read_existing_xlsx_data: 文件不存在")
         return {}, {}
 
+    _log(f"[ExcelTools] _read_existing_xlsx_data: 文件存在，开始读取")
     try:
         wb = openpyxl.load_workbook(xlsx_path, data_only=True)
+        _log(f"[ExcelTools] _read_existing_xlsx_data: 工作簿加载成功，工作表: {wb.sheetnames}")
         data_result = {}
         col_widths_result = {}
 
@@ -277,6 +311,10 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
     if not OPENPYXL_AVAILABLE:
         raise RuntimeError("未安装openpyxl，无法生成xlsx。请安装后重试，或使用CSV回退。")
 
+    # 规范化输出路径
+    out_xlsx_path = os.path.normpath(out_xlsx_path)
+    _log(f"[ExcelTools] 输出路径（规范化后）: {out_xlsx_path}")
+
     schema_dir = schema_dir or _schema_dir_default()
     struct_name = _schema_struct_name(schema)
     main_sheet_name = struct_name if struct_name else "Main"
@@ -285,18 +323,38 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
     existing_data = {}
     existing_col_widths = {}
     if preserve_data:
+        _log(f"[ExcelTools] preserve_data=True，尝试读取现有文件：{out_xlsx_path}")
         existing_data, existing_col_widths = _read_existing_xlsx_data(out_xlsx_path)
         if existing_data:
             _log(f"[ExcelTools] 检测到现有文件，将保留已有数据和列宽")
+            for sheet_name, rows in existing_data.items():
+                _log(f"[ExcelTools]   - 工作表 '{sheet_name}': {len(rows)} 行数据")
+                if rows:
+                    _log(f"[ExcelTools]     列名: {list(rows[0].keys())}")
+        else:
+            _log(f"[ExcelTools] 未检测到现有数据（文件不存在或为空）")
 
     wb = openpyxl.Workbook()
     ws_main = wb.active
     ws_main.title = main_sheet_name
 
-    # 主表：Name + 非数组字段 + 基本类型数组字段
+    # 收集有 ExcelSheet 元数据的字段，按 ExcelSheet 分组
+    excel_sheet_fields = {}  # ExcelSheet -> [fields...]
+    for f in _schema_fields(schema):
+        if f.get("bExcelIgnore"):
+            continue
+        excel_sheet = (f.get("excelSheet") or "").strip()
+        if excel_sheet:
+            excel_sheet_fields.setdefault(excel_sheet, []).append(f)
+
+    # 主表：Name + 非数组字段 + 基本类型数组字段（排除有 ExcelSheet 的字段）
     main_fields = [{"name": "Name", "kind": "string"}]  # DataTable行名/主键
     for f in _schema_fields(schema):
         if f.get("bExcelIgnore"):
+            continue
+        # 跳过有 ExcelSheet 元数据的字段（会创建单独子表）
+        excel_sheet = (f.get("excelSheet") or "").strip()
+        if excel_sheet:
             continue
         # 跳过 array<struct>（会创建子表），保留基本类型数组
         if (f.get("kind") or "") == "array" and not _is_primitive_array(f):
@@ -308,7 +366,23 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
     ws_main.append([_field_hint(schema, f) for f in main_fields])
 
     # 写入现有数据（如果有）
+    _log(f"[ExcelTools] 查找主表数据，sheet名称: '{main_sheet_name}'")
+    _log(f"[ExcelTools] 现有数据的sheet名称: {list(existing_data.keys())}")
+
+    # 智能匹配主表：如果精确匹配失败，尝试查找现有的主表（不含 "." 的工作表）
     main_existing = existing_data.get(main_sheet_name, [])
+    matched_main_sheet = main_sheet_name
+    if not main_existing and existing_data:
+        # 查找不含 "." 的工作表（主表候选）
+        main_sheet_candidates = [s for s in existing_data.keys() if "." not in s]
+        if len(main_sheet_candidates) == 1:
+            matched_main_sheet = main_sheet_candidates[0]
+            main_existing = existing_data.get(matched_main_sheet, [])
+            _log(f"[ExcelTools] 使用现有主表 '{matched_main_sheet}' 的数据（智能匹配）")
+
+    if main_existing:
+        _log(f"[ExcelTools] 新表头: {headers}")
+        _log(f"[ExcelTools] 现有数据第一行的列名: {list(main_existing[0].keys()) if main_existing else []}")
     for row_data in main_existing:
         row_values = []
         for header in headers:
@@ -317,6 +391,8 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
 
     if main_existing:
         _log(f"[ExcelTools] 主表保留了 {len(main_existing)} 行数据")
+    else:
+        _log(f"[ExcelTools] 主表没有找到匹配的现有数据")
 
     # 为枚举列添加下拉列表验证（动态计算结束行）
     # 至少覆盖现有数据 + 500 行余量，最少1000行
@@ -326,14 +402,62 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
         if enum_values:
             _apply_enum_validation(ws_main, col_idx, enum_values, end_row=main_end_row)
 
-    # 应用主表列宽（如果有保存的列宽）
-    main_col_widths = existing_col_widths.get(main_sheet_name, {})
+    # 应用主表列宽（如果有保存的列宽，使用匹配到的主表名称）
+    main_col_widths = existing_col_widths.get(matched_main_sheet, {})
     if main_col_widths:
+        _log(f"[ExcelTools] 应用主表列宽，来源工作表: '{matched_main_sheet}'")
         from openpyxl.utils import get_column_letter
         for col_idx, header in enumerate(headers, start=1):
             if header in main_col_widths:
                 col_letter = get_column_letter(col_idx)
                 ws_main.column_dimensions[col_letter].width = main_col_widths[header]
+
+    # ExcelSheet 子表：按 ExcelSheet 元数据分组的字段
+    # 子表只使用后缀名，避免 Excel 31 字符限制
+    for excel_sheet_name, sheet_fields in excel_sheet_fields.items():
+        sub_sheet_name = _safe_sheet_name(excel_sheet_name)
+        ws_ext = wb.create_sheet(sub_sheet_name)
+
+        # ParentName 作为外键关联主表
+        ext_fields = [{"name": "ParentName", "kind": "string"}]
+        ext_fields.extend(sheet_fields)
+
+        ext_headers = [_excel_col_name(x) for x in ext_fields]
+        ws_ext.append(ext_headers)
+        ws_ext.append([_field_hint(schema, x) for x in ext_fields])
+
+        # 智能匹配子表数据（优先精确匹配，然后尝试旧格式 MainSheet.SubName）
+        ext_existing = existing_data.get(sub_sheet_name, [])
+        matched_ext_sheet = sub_sheet_name
+        if not ext_existing:
+            matched_ext_sheet = _find_matching_sub_sheet(list(existing_data.keys()), excel_sheet_name, matched_main_sheet)
+            ext_existing = existing_data.get(matched_ext_sheet, []) if matched_ext_sheet else []
+
+        # 写入子表现有数据（如果有）
+        for row_data in ext_existing:
+            row_values = []
+            for header in ext_headers:
+                row_values.append(row_data.get(header, None))
+            ws_ext.append(row_values)
+
+        if ext_existing:
+            _log(f"[ExcelTools] ExcelSheet 子表 {sub_sheet_name} 保留了 {len(ext_existing)} 行数据（来源: '{matched_ext_sheet}'）")
+
+        # 为子表的枚举列添加下拉列表验证
+        ext_end_row = max(1000, len(ext_existing) + 3 + 500)
+        for col_idx, sf in enumerate(ext_fields, start=1):
+            enum_values = _get_enum_values_for_field(sf)
+            if enum_values:
+                _apply_enum_validation(ws_ext, col_idx, enum_values, end_row=ext_end_row)
+
+        # 应用子表列宽（如果有保存的列宽）
+        ext_col_widths = existing_col_widths.get(matched_ext_sheet, {}) if matched_ext_sheet else {}
+        if ext_col_widths:
+            from openpyxl.utils import get_column_letter
+            for col_idx, header in enumerate(ext_headers, start=1):
+                if header in ext_col_widths:
+                    col_letter = get_column_letter(col_idx)
+                    ws_ext.column_dimensions[col_letter].width = ext_col_widths[header]
 
     # 子表：每个 array<struct> 一个Sheet
     for f in _schema_fields(schema):
@@ -354,9 +478,9 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
 
         inner_schema = _load_schema(inner_struct_name, schema_dir=schema_dir)
 
-        # 构建子表名称（需要截断以符合 Excel 31 字符限制）
-        sub_sheet_name_full = f"{main_sheet_name}.{str(f.get('name') or '').strip()}"
-        sub_sheet_name = _safe_sheet_name(sub_sheet_name_full)
+        # 子表只使用字段名，避免 Excel 31 字符限制
+        field_name = str(f.get('name') or '').strip()
+        sub_sheet_name = _safe_sheet_name(field_name)
         ws_sub = wb.create_sheet(sub_sheet_name)
 
         sub_fields = [{"name": "ParentName", "kind": "string"}]
@@ -372,8 +496,14 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
         ws_sub.append(sub_headers)
         ws_sub.append([_field_hint(inner_schema, x) for x in sub_fields])
 
-        # 写入子表现有数据（如果有）
+        # 智能匹配子表数据（优先精确匹配，然后尝试旧格式 MainSheet.SubName）
         sub_existing = existing_data.get(sub_sheet_name, [])
+        matched_sub_sheet = sub_sheet_name
+        if not sub_existing:
+            matched_sub_sheet = _find_matching_sub_sheet(list(existing_data.keys()), field_name, matched_main_sheet)
+            sub_existing = existing_data.get(matched_sub_sheet, []) if matched_sub_sheet else []
+
+        # 写入子表现有数据（如果有）
         for row_data in sub_existing:
             row_values = []
             for header in sub_headers:
@@ -381,7 +511,7 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
             ws_sub.append(row_values)
 
         if sub_existing:
-            _log(f"[ExcelTools] 子表 {sub_sheet_name} 保留了 {len(sub_existing)} 行数据")
+            _log(f"[ExcelTools] 子表 {sub_sheet_name} 保留了 {len(sub_existing)} 行数据（来源: '{matched_sub_sheet}'）")
 
         # 为子表的枚举列添加下拉列表验证（动态计算结束行）
         sub_end_row = max(1000, len(sub_existing) + 3 + 500)
@@ -391,7 +521,7 @@ def _write_xlsx_template_from_schema(schema: dict, out_xlsx_path: str, schema_di
                 _apply_enum_validation(ws_sub, col_idx, enum_values, end_row=sub_end_row)
 
         # 应用子表列宽（如果有保存的列宽）
-        sub_col_widths = existing_col_widths.get(sub_sheet_name, {})
+        sub_col_widths = existing_col_widths.get(matched_sub_sheet, {}) if matched_sub_sheet else {}
         if sub_col_widths:
             from openpyxl.utils import get_column_letter
             for col_idx, header in enumerate(sub_headers, start=1):
@@ -724,6 +854,15 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
     struct_name = _schema_struct_name(schema)
     main_sheet_name = struct_name if struct_name else "Main"
 
+    # 收集有 ExcelSheet 元数据的字段，按 ExcelSheet 分组
+    excel_sheet_fields = {}  # ExcelSheet -> [fields...]
+    for f in _schema_fields(schema):
+        if f.get("bExcelIgnore"):
+            continue
+        excel_sheet = (f.get("excelSheet") or "").strip()
+        if excel_sheet:
+            excel_sheet_fields.setdefault(excel_sheet, []).append(f)
+
     # 收集 array<struct> 字段
     array_fields = []
     for f in _schema_fields(schema):
@@ -746,13 +885,34 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
 
     main_rows = sheet_map.get(main_sheet_name) or []
 
-    # 子表按 ParentName 聚合
+    # ExcelSheet 子表按 ParentName 聚合
+    excel_sheet_rows_map = {}  # ExcelSheet -> { ParentName -> row_data }
+    for excel_sheet_name in excel_sheet_fields.keys():
+        # 优先使用新格式（只有字段名），如果找不到再尝试旧格式（MainSheet.SubName）
+        sub_sheet = _safe_sheet_name(excel_sheet_name)
+        sub_rows = sheet_map.get(sub_sheet) or []
+        if not sub_rows:
+            sub_sheet_old = _safe_sheet_name(f"{main_sheet_name}.{excel_sheet_name}")
+            sub_rows = sheet_map.get(sub_sheet_old) or []
+        by_parent = {}
+        for r in sub_rows:
+            p = _safe_str(r.get("ParentName"), "")
+            if not p:
+                continue
+            # ExcelSheet 子表每个 ParentName 只有一行（不是数组）
+            by_parent[p] = r
+        excel_sheet_rows_map[excel_sheet_name] = by_parent
+
+    # 子表按 ParentName 聚合（array<struct>）
     child_rows_map = {}  # arrayFieldName -> { ParentName -> [rows...] }
     for af in array_fields:
         af_name = str(af.get("name") or "").strip()
-        # 使用安全的工作表名称（Excel 限制 31 字符）
-        sub_sheet = _safe_sheet_name(f"{main_sheet_name}.{af_name}")
+        # 优先使用新格式（只有字段名），如果找不到再尝试旧格式（MainSheet.SubName）
+        sub_sheet = _safe_sheet_name(af_name)
         sub_rows = sheet_map.get(sub_sheet) or []
+        if not sub_rows:
+            sub_sheet_old = _safe_sheet_name(f"{main_sheet_name}.{af_name}")
+            sub_rows = sheet_map.get(sub_sheet_old) or []
         by_parent = {}
         for r in sub_rows:
             p = _safe_str(r.get("ParentName"), "")
@@ -761,10 +921,14 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
             by_parent.setdefault(p, []).append(r)
         child_rows_map[af_name] = by_parent
 
-    # 主表字段：Name + 非数组字段 + 基本类型数组字段
+    # 主表字段：Name + 非数组字段 + 基本类型数组字段（排除有 ExcelSheet 的字段）
     main_fields = [{"name": "Name", "kind": "string"}]
     for f in _schema_fields(schema):
         if f.get("bExcelIgnore"):
+            continue
+        # 跳过有 ExcelSheet 元数据的字段（从子表读取）
+        excel_sheet = (f.get("excelSheet") or "").strip()
+        if excel_sheet:
             continue
         # 跳过 array<struct>（从子表读取），保留基本类型数组
         if (f.get("kind") or "") == "array" and not _is_primitive_array(f):
@@ -793,6 +957,19 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
                 item[fn] = arr_val
             else:
                 item[fn] = _to_scalar_from_cell(schema, f, cell_val)
+
+        # 写入 ExcelSheet 子表字段
+        for excel_sheet_name, sheet_fields in excel_sheet_fields.items():
+            ext_row = (excel_sheet_rows_map.get(excel_sheet_name) or {}).get(name)
+            if ext_row:
+                for sf in sheet_fields:
+                    sf_name = str(sf.get("name") or "").strip()
+                    col = _excel_col_name(sf)
+                    cell_val = ext_row.get(col)
+                    if _is_primitive_array(sf):
+                        item[sf_name] = _to_primitive_array_from_cell(sf, cell_val)
+                    else:
+                        item[sf_name] = _to_scalar_from_cell(schema, sf, cell_val)
 
         # 写入 array<struct> 子表
         for af in array_fields:

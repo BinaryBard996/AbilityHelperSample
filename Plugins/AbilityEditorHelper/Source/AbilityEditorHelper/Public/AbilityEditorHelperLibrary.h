@@ -5,11 +5,57 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "AbilityEditorTypes.h"
+#include "GameplayEffect.h"
+#include "GameplayEffectComponent.h"
 #include "AbilityEditorHelperLibrary.generated.h"
 
 class UBlueprint;
-class UGameplayEffect;
 class UAbilityEditorHelperSettings;
+
+/**
+ * 从 GameplayEffect 中移除指定类型的 GEComponent（模板函数）
+ * @param GE        目标 GameplayEffect
+ * @return          是否成功移除（找到并移除返回 true）
+ */
+template<typename T>
+bool RemoveGEComponent(UGameplayEffect* GE)
+{
+	if (!GE)
+	{
+		return false;
+	}
+
+	// 通过反射获取 GEComponents 数组
+	FArrayProperty* GEComponentsProp = CastField<FArrayProperty>(
+		UGameplayEffect::StaticClass()->FindPropertyByName(TEXT("GEComponents"))
+	);
+
+	if (!GEComponentsProp)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 无法通过反射找到 GEComponents 属性"));
+		return false;
+	}
+
+	TArray<TObjectPtr<UGameplayEffectComponent>>* ComponentsPtr =
+		GEComponentsProp->ContainerPtrToValuePtr<TArray<TObjectPtr<UGameplayEffectComponent>>>(GE);
+
+	if (!ComponentsPtr)
+	{
+		return false;
+	}
+
+	// 查找并移除指定类型的组件
+	for (int32 i = ComponentsPtr->Num() - 1; i >= 0; --i)
+	{
+		if ((*ComponentsPtr)[i] && (*ComponentsPtr)[i]->IsA<T>())
+		{
+			ComponentsPtr->RemoveAt(i);
+			return true;
+		}
+	}
+
+	return false;
+}
 
 /**
  * 

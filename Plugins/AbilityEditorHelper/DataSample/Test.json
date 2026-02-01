@@ -115,12 +115,14 @@
             "ParentTags": []
         },
         "GrantedAbilityClasses": [],
+        "TestIntValue": 10,
+        "bTestBoolValue": false,
         "Modifiers": [
             {
                 "Attribute": "TestAttributeSet.TestPropertyOne",
                 "ModifierOp": "AddBase",
                 "MagnitudeCalculationType": "ScalableFloat",
-                "Magnitude": 10.0,
+                "Magnitude": 100.0,
                 "AttributeBasedConfig": {
                     "BackingAttribute": "",
                     "AttributeCalculationType": "AttributeMagnitude",
@@ -157,15 +159,7 @@
                 }
             }
         ],
-        "GameplayCues": [
-            {
-                "GameplayCueTag": {
-                    "TagName": "GameplayCue.Test"
-                },
-                "MinLevel": 0.0,
-                "MaxLevel": 0.0
-            }
-        ],
+        "GameplayCues": [],
         "ImmunityQueries": [],
         "RemovalQueries": [],
         "Executions": [

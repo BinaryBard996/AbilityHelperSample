@@ -3,6 +3,8 @@
 
 #include "AbilityEditorHelperLibrary.h"
 #include "AbilityEditorHelperSettings.h"
+#include "AbilityEditorHelperSubsystem.h"
+#include "Editor.h"
 #include "Misc/PackageName.h"
 #include "GameplayTagContainer.h"
 #include "Engine/DataTable.h"
@@ -232,50 +234,6 @@ namespace
 		return Query;
 	}
 
-	/**
-	 * 从 GameplayEffect 中移除指定类型的 GEComponent
-	 * @param GE        目标 GameplayEffect
-	 * @return          是否成功移除（找到并移除返回 true）
-	 */
-	template<typename T>
-	static bool RemoveGEComponent(UGameplayEffect* GE)
-	{
-		if (!GE)
-		{
-			return false;
-		}
-
-		// 通过反射获取 GEComponents 数组
-		FArrayProperty* GEComponentsProp = CastField<FArrayProperty>(
-			UGameplayEffect::StaticClass()->FindPropertyByName(TEXT("GEComponents"))
-		);
-
-		if (!GEComponentsProp)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 无法通过反射找到 GEComponents 属性"));
-			return false;
-		}
-
-		TArray<TObjectPtr<UGameplayEffectComponent>>* ComponentsPtr =
-			GEComponentsProp->ContainerPtrToValuePtr<TArray<TObjectPtr<UGameplayEffectComponent>>>(GE);
-
-		if (!ComponentsPtr)
-		{
-			return false;
-		}
-
-		// 查找并移除指定类型的组件
-		for (int32 i = ComponentsPtr->Num() - 1; i >= 0; --i)
-		{
-			if ((*ComponentsPtr)[i] && (*ComponentsPtr)[i]->IsA<T>())
-			{
-				ComponentsPtr->RemoveAt(i);
-				return true;
-			}
-		}
-
-		return false;
-	}
 }
 
 const UAbilityEditorHelperSettings* UAbilityEditorHelperLibrary::GetAbilityEditorHelperSettings()
@@ -806,6 +764,15 @@ UGameplayEffect* UAbilityEditorHelperLibrary::CreateOrImportGameplayEffect(const
 		
 		// 标记脏包
 		GE->MarkPackageDirty();
+
+		// 广播后处理委托，让项目 Source 可以处理派生类的扩展字段
+		if (GEditor)
+		{
+			if (UAbilityEditorHelperSubsystem* Subsystem = GEditor->GetEditorSubsystem<UAbilityEditorHelperSubsystem>())
+			{
+				Subsystem->BroadcastPostProcessGameplayEffect(&Config, GE);
+			}
+		}
 	}
 
 	bOutSuccess = GE != nullptr;
@@ -827,10 +794,10 @@ void UAbilityEditorHelperLibrary::CreateOrUpdateGameplayEffectsFromSettings(bool
 		return;
 	}
 
-	// 校验行结构
-	if (!DataTable->GetRowStruct() || DataTable->GetRowStruct() != FGameplayEffectConfig::StaticStruct())
+	// 校验行结构（支持 FGameplayEffectConfig 及其派生类）
+	if (!DataTable->GetRowStruct() || !DataTable->GetRowStruct()->IsChildOf(FGameplayEffectConfig::StaticStruct()))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] DataTable 行结构不是 FGameplayEffectConfig，无法导入。"));
+		UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] DataTable 行结构不是 FGameplayEffectConfig 或其派生类，无法导入。"));
 		return;
 	}
 
@@ -1396,12 +1363,13 @@ bool UAbilityEditorHelperLibrary::ParseAttributeString(const FString& AttributeS
 namespace
 {
 	/**
-	 * 将 FGameplayEffectConfig 序列化为 JSON 字符串（用于比较）
+	 * 将结构体序列化为 JSON 字符串（用于比较）
+	 * 支持 FGameplayEffectConfig 及其派生类
 	 */
-	static FString SerializeConfigToJsonString(const FGameplayEffectConfig& Config)
+	static FString SerializeStructToJsonString(UScriptStruct* StructType, const void* StructData)
 	{
 		FString JsonString;
-		if (FJsonObjectConverter::UStructToJsonObjectString(FGameplayEffectConfig::StaticStruct(), &Config, JsonString, 0, 0))
+		if (FJsonObjectConverter::UStructToJsonObjectString(StructType, StructData, JsonString, 0, 0))
 		{
 			return JsonString;
 		}
@@ -1409,13 +1377,13 @@ namespace
 	}
 
 	/**
-	 * 比较两个 FGameplayEffectConfig 是否相同
+	 * 比较两个结构体是否相同
 	 * 通过序列化为 JSON 字符串后比较来实现
 	 */
-	static bool AreConfigsEqual(const FGameplayEffectConfig& A, const FGameplayEffectConfig& B)
+	static bool AreStructsEqual(UScriptStruct* StructType, const void* A, const void* B)
 	{
-		const FString JsonA = SerializeConfigToJsonString(A);
-		const FString JsonB = SerializeConfigToJsonString(B);
+		const FString JsonA = SerializeStructToJsonString(StructType, A);
+		const FString JsonB = SerializeStructToJsonString(StructType, B);
 		return JsonA.Equals(JsonB);
 	}
 }
@@ -1435,12 +1403,15 @@ bool UAbilityEditorHelperLibrary::ImportAndUpdateGameplayEffectsFromJson(
 		return false;
 	}
 
-	// 校验行结构
-	if (!DataTable->GetRowStruct() || DataTable->GetRowStruct() != FGameplayEffectConfig::StaticStruct())
+	// 校验行结构（支持 FGameplayEffectConfig 及其派生类）
+	UScriptStruct* RowStruct = const_cast<UScriptStruct*>(DataTable->GetRowStruct());
+	if (!RowStruct || !RowStruct->IsChildOf(FGameplayEffectConfig::StaticStruct()))
 	{
-		UE_LOG(LogAbilityEditor, Error, TEXT("DataTable 行结构不是 FGameplayEffectConfig"));
+		UE_LOG(LogAbilityEditor, Error, TEXT("DataTable 行结构不是 FGameplayEffectConfig 或其派生类"));
 		return false;
 	}
+
+	const int32 StructSize = RowStruct->GetStructureSize();
 
 	// 构建 JSON 文件完整路径
 	if (Settings->JsonPath.IsEmpty())
@@ -1473,19 +1444,21 @@ bool UAbilityEditorHelperLibrary::ImportAndUpdateGameplayEffectsFromJson(
 		return false;
 	}
 
-	// 缓存现有 DataTable 数据（用于比较）
-	TMap<FName, FGameplayEffectConfig> ExistingConfigs;
+	// 缓存现有 DataTable 数据的 JSON 表示（用于比较）
+	TMap<FName, FString> ExistingJsonMap;
 	for (const TPair<FName, uint8*>& RowPair : DataTable->GetRowMap())
 	{
 		if (RowPair.Value)
 		{
-			const FGameplayEffectConfig* ExistingConfig = reinterpret_cast<const FGameplayEffectConfig*>(RowPair.Value);
-			ExistingConfigs.Add(RowPair.Key, *ExistingConfig);
+			FString JsonStr = SerializeStructToJsonString(RowStruct, RowPair.Value);
+			ExistingJsonMap.Add(RowPair.Key, JsonStr);
 		}
 	}
 
-	// 解析 JSON 数据并找出变化的行
-	TMap<FName, FGameplayEffectConfig> NewConfigs;
+	// 使用动态内存分配存储新配置数据
+	TMap<FName, TSharedPtr<uint8, ESPMode::ThreadSafe>> NewConfigsMemory;
+	TMap<FName, FString> NewJsonMap;
+
 	for (const TSharedPtr<FJsonValue>& JsonValue : JsonArray)
 	{
 		if (!JsonValue.IsValid() || JsonValue->Type != EJson::Object)
@@ -1507,20 +1480,31 @@ bool UAbilityEditorHelperLibrary::ImportAndUpdateGameplayEffectsFromJson(
 			continue;
 		}
 
-		// 反序列化为 FGameplayEffectConfig
-		FGameplayEffectConfig NewConfig;
-		if (!FJsonObjectConverter::JsonObjectToUStruct(JsonObject.ToSharedRef(), FGameplayEffectConfig::StaticStruct(), &NewConfig))
+		// 分配内存并初始化结构体
+		TSharedPtr<uint8, ESPMode::ThreadSafe> ConfigMemory(
+			static_cast<uint8*>(FMemory::Malloc(StructSize)),
+			[](uint8* Ptr) { FMemory::Free(Ptr); }
+		);
+		RowStruct->InitializeStruct(ConfigMemory.Get());
+
+		// 反序列化为实际的结构体类型
+		if (!FJsonObjectConverter::JsonObjectToUStruct(JsonObject.ToSharedRef(), RowStruct, ConfigMemory.Get()))
 		{
 			UE_LOG(LogAbilityEditor, Warning, TEXT("无法反序列化行 %s，已跳过"), *RowNameStr);
+			RowStruct->DestroyStruct(ConfigMemory.Get());
 			continue;
 		}
 
 		FName RowName(*RowNameStr);
-		NewConfigs.Add(RowName, NewConfig);
+		NewConfigsMemory.Add(RowName, ConfigMemory);
+
+		// 序列化为 JSON 字符串用于比较
+		FString NewJsonStr = SerializeStructToJsonString(RowStruct, ConfigMemory.Get());
+		NewJsonMap.Add(RowName, NewJsonStr);
 
 		// 比较是否有变化
-		const FGameplayEffectConfig* ExistingConfig = ExistingConfigs.Find(RowName);
-		if (!ExistingConfig || !AreConfigsEqual(*ExistingConfig, NewConfig))
+		const FString* ExistingJson = ExistingJsonMap.Find(RowName);
+		if (!ExistingJson || !ExistingJson->Equals(NewJsonStr))
 		{
 			// 新增或变化的行
 			OutUpdatedRowNames.Add(RowName);
@@ -1541,8 +1525,8 @@ bool UAbilityEditorHelperLibrary::ImportAndUpdateGameplayEffectsFromJson(
 	// 更新 DataTable 中变化的行
 	for (const FName& RowName : OutUpdatedRowNames)
 	{
-		const FGameplayEffectConfig* NewConfig = NewConfigs.Find(RowName);
-		if (!NewConfig)
+		TSharedPtr<uint8, ESPMode::ThreadSafe>* NewConfigMemory = NewConfigsMemory.Find(RowName);
+		if (!NewConfigMemory || !NewConfigMemory->IsValid())
 		{
 			continue;
 		}
@@ -1551,14 +1535,13 @@ bool UAbilityEditorHelperLibrary::ImportAndUpdateGameplayEffectsFromJson(
 		uint8* ExistingRowData = DataTable->FindRowUnchecked(RowName);
 		if (ExistingRowData)
 		{
-			// 更新现有行
-			FGameplayEffectConfig* ExistingConfig = reinterpret_cast<FGameplayEffectConfig*>(ExistingRowData);
-			*ExistingConfig = *NewConfig;
+			// 更新现有行（复制结构体数据）
+			RowStruct->CopyScriptStruct(ExistingRowData, NewConfigMemory->Get());
 		}
 		else
 		{
 			// 添加新行
-			DataTable->AddRow(RowName, *NewConfig);
+			DataTable->AddRow(RowName, *reinterpret_cast<FTableRowBase*>(NewConfigMemory->Get()));
 		}
 	}
 
@@ -1578,11 +1561,13 @@ bool UAbilityEditorHelperLibrary::ImportAndUpdateGameplayEffectsFromJson(
 	int32 FailCount = 0;
 	for (const FName& RowName : OutUpdatedRowNames)
 	{
-		const FGameplayEffectConfig* Config = NewConfigs.Find(RowName);
-		if (!Config)
+		// 从 DataTable 获取更新后的配置
+		uint8* ConfigData = DataTable->FindRowUnchecked(RowName);
+		if (!ConfigData)
 		{
 			continue;
 		}
+		const FGameplayEffectConfig* Config = reinterpret_cast<const FGameplayEffectConfig*>(ConfigData);
 
 		FString RowAssetName = RowName.ToString();
 		if (!RowAssetName.Contains(TEXT("GE_")))

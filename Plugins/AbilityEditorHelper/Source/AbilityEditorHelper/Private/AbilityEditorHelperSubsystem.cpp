@@ -1,6 +1,15 @@
-﻿// AbilityEditorHelperSubsystem.cpp
+// AbilityEditorHelperSubsystem.cpp
 
 #include "AbilityEditorHelperSubsystem.h"
+#include "GameplayEffect.h"
+
+void UAbilityEditorHelperSubsystem::BroadcastPostProcessGameplayEffect(const FTableRowBase* Config, UGameplayEffect* GE)
+{
+	if (OnPostProcessGameplayEffect.IsBound())
+	{
+		OnPostProcessGameplayEffect.Broadcast(Config, GE);
+	}
+}
 
 void UAbilityEditorHelperSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
