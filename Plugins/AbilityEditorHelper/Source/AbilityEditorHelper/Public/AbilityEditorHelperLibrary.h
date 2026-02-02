@@ -174,4 +174,44 @@ public:
 	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|GameplayEffect", meta=(DisplayName="Import And Update GameplayEffects From JSON"))
 	static bool ImportAndUpdateGameplayEffectsFromJson(const FString& JsonFileName, bool bClearGameplayEffectFolderFirst, TArray<FName>& OutUpdatedRowNames);
 
+	// ===========================================
+	// GameplayAbility 相关函数
+	// ===========================================
+
+	/**
+	 * 根据 FGameplayAbilityConfig 在指定路径创建或更新 GameplayAbility 蓝图资产，并写入配置数据。
+	 * - 若资产已存在则覆盖关键字段；
+	 * - 若资产不存在则在编辑器下创建新资产并导入配置。
+	 * 非编辑器环境下仅尝试加载但不会创建，失败则返回nullptr且bOutSuccess=false。
+	 */
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|GameplayAbility", meta=(DisplayName="Create Or Import GameplayAbility From Config"))
+	static UGameplayAbility* CreateOrImportGameplayAbility(const FString& GameplayAbilityPath, const FGameplayAbilityConfig& Config, bool& bOutSuccess);
+
+	/**
+	 * 基于 UAbilityEditorHelperSettings 中的 DataTable 与 GameplayAbilityPath，批量创建/更新 GameplayAbility。
+	 * 不返回创建的对象或数量，处理结果通过日志输出。
+	 * @param bClearGameplayAbilityFolderFirst  在导入前是否先清理 GameplayAbilityPath 路径下不在 DataTable 的 GA 资产
+	 */
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|GameplayAbility", meta=(DisplayName="Create Or Update GameplayAbilities From Settings"))
+	static void CreateOrUpdateGameplayAbilitiesFromSettings(bool bClearGameplayAbilityFolderFirst = false);
+
+	/**
+	 * 从 JSON 文件导入数据并更新 GameplayAbilities（增量更新）
+	 * @param JsonFileName                      JSON 文件名（相对于 Settings::JsonPath）
+	 * @param bClearGameplayAbilityFolderFirst  是否先清理不在 DataTable 中的 GA 资产
+	 * @param OutUpdatedRowNames                被更新的行名列表
+	 * @return                                  是否成功
+	 */
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|GameplayAbility", meta=(DisplayName="Import And Update GameplayAbilities From JSON"))
+	static bool ImportAndUpdateGameplayAbilitiesFromJson(const FString& JsonFileName, bool bClearGameplayAbilityFolderFirst, TArray<FName>& OutUpdatedRowNames);
+
+private:
+	/** 获取 GA 设置和 DataTable */
+	static bool GetGASettingsAndDataTable(const UAbilityEditorHelperSettings*& OutSettings, UDataTable*& OutDataTable);
+
+	/** 获取 GA 基础路径 */
+	static FString GetGameplayAbilityBasePath(const UAbilityEditorHelperSettings* Settings);
+
+	/** 清理 GA 文件夹中不在 DataTable 中的资产 */
+	static void CleanupGameplayAbilityFolder(const FString& BasePath, const UDataTable* DataTable);
 };

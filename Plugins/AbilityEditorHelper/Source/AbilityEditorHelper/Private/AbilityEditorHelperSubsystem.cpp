@@ -2,12 +2,21 @@
 
 #include "AbilityEditorHelperSubsystem.h"
 #include "GameplayEffect.h"
+#include "Abilities/GameplayAbility.h"
 
 void UAbilityEditorHelperSubsystem::BroadcastPostProcessGameplayEffect(const FTableRowBase* Config, UGameplayEffect* GE)
 {
 	if (OnPostProcessGameplayEffect.IsBound())
 	{
 		OnPostProcessGameplayEffect.Broadcast(Config, GE);
+	}
+}
+
+void UAbilityEditorHelperSubsystem::BroadcastPostProcessGameplayAbility(const FTableRowBase* Config, UGameplayAbility* GA)
+{
+	if (OnPostProcessGameplayAbility.IsBound())
+	{
+		OnPostProcessGameplayAbility.Broadcast(Config, GA);
 	}
 }
 

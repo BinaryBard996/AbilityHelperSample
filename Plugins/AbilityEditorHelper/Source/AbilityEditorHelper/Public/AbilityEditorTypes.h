@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "AttributeSet.h"
 #include "GameplayEffect.h"
+#include "Abilities/GameplayAbilityTypes.h"
 #include "UObject/Object.h"
 #include "AbilityEditorTypes.generated.h"
 
@@ -393,9 +394,130 @@ struct FGameplayEffectConfig : public FTableRowBase
 
 };
 
+/**
+ * 能力触发器配置
+ */
 USTRUCT(BlueprintType)
-struct FGameplayAbilityConfig : public FTableRowBase
+struct FAbilityTriggerConfig
 {
 	GENERATED_BODY()
-	
+
+	// 触发 Tag
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trigger")
+	FGameplayTag TriggerTag;
+
+	// 触发来源
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trigger")
+	TEnumAsByte<EGameplayAbilityTriggerSource::Type> TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
+};
+
+/**
+ * 完整的 GA 配置数据（DataTable 行结构）
+ */
+USTRUCT(BlueprintType)
+struct ABILITYEDITORHELPER_API FGameplayAbilityConfig : public FTableRowBase
+{
+	GENERATED_BODY()
+
+	// === 基础配置 ===
+
+	// 说明/描述（用于在 Excel 中解释此能力的用途）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic",
+		meta = (ExcelHint = "Description of this ability for documentation"))
+	FString Description;
+
+	// 父类（可选，用于继承）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic",
+		meta = (ExcelHint = "Asset path: /Game/Abilities/GA_Base"))
+	FString ParentClass;
+
+	// === Cost 和 Cooldown ===
+
+	// Cost GameplayEffect 类路径
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Costs",
+		meta = (ExcelHint = "Asset path to Cost GE class"))
+	FString CostGameplayEffectClass;
+
+	// Cooldown GameplayEffect 类路径
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cooldowns",
+		meta = (ExcelHint = "Asset path to Cooldown GE class"))
+	FString CooldownGameplayEffectClass;
+
+	// === Tag 配置 ===
+
+	// 能力自身的 Asset Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
+	FGameplayTagContainer AssetTags;
+
+	// 取消拥有这些 Tags 的 Abilities
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
+	FGameplayTagContainer CancelAbilitiesWithTag;
+
+	// 阻断拥有这些 Tags 的 Abilities
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
+	FGameplayTagContainer BlockAbilitiesWithTag;
+
+	// 激活时拥有的 Tags（ActivationOwnedTags）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
+	FGameplayTagContainer ActivationOwnedTags;
+
+	// 激活时需要的 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
+	FGameplayTagContainer ActivationRequiredTags;
+
+	// 激活时阻断的 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
+	FGameplayTagContainer ActivationBlockedTags;
+
+	// 来源需要的 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
+	FGameplayTagContainer SourceRequiredTags;
+
+	// 来源阻断的 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
+	FGameplayTagContainer SourceBlockedTags;
+
+	// 目标需要的 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
+	FGameplayTagContainer TargetRequiredTags;
+
+	// 目标阻断的 Tags
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
+	FGameplayTagContainer TargetBlockedTags;
+
+	// === Triggers 配置 ===
+
+	// 能力触发器列表
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Triggers")
+	TArray<FAbilityTriggerConfig> AbilityTriggers;
+
+	// === Advanced 配置 ===
+
+	// 是否在服务器端尊重远程能力取消
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Advanced")
+	bool bServerRespectsRemoteAbilityCancellation = true;
+
+	// 是否直接复制输入
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Advanced")
+	bool bReplicateInputDirectly = false;
+
+	// 网络执行策略
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Advanced")
+	TEnumAsByte<EGameplayAbilityNetExecutionPolicy::Type> NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+
+	// 网络安全策略
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Advanced")
+	TEnumAsByte<EGameplayAbilityNetSecurityPolicy::Type> NetSecurityPolicy = EGameplayAbilityNetSecurityPolicy::ClientOrServer;
+
+	// 实例化策略
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Advanced")
+	TEnumAsByte<EGameplayAbilityInstancingPolicy::Type> InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+
+	// 复制策略
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Advanced")
+	TEnumAsByte<EGameplayAbilityReplicationPolicy::Type> ReplicationPolicy = EGameplayAbilityReplicationPolicy::ReplicateNo;
+
+	// 是否在激活时自动重触发
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Advanced")
+	bool bRetriggerInstancedAbility = false;
 };

@@ -1598,3 +1598,562 @@ bool UAbilityEditorHelperLibrary::ImportAndUpdateGameplayEffectsFromJson(
 	return false;
 #endif
 }
+
+// ===========================================
+// GameplayAbility 相关函数实现
+// ===========================================
+
+bool UAbilityEditorHelperLibrary::GetGASettingsAndDataTable(const UAbilityEditorHelperSettings*& OutSettings, UDataTable*& OutDataTable)
+{
+	OutSettings = GetDefault<UAbilityEditorHelperSettings>();
+	if (!OutSettings)
+	{
+		UE_LOG(LogAbilityEditor, Warning, TEXT("无法获取 UAbilityEditorHelperSettings"));
+		return false;
+	}
+
+	OutDataTable = OutSettings->GameplayAbilityDataTable.IsValid()
+		? OutSettings->GameplayAbilityDataTable.Get()
+		: OutSettings->GameplayAbilityDataTable.LoadSynchronous();
+
+	if (!OutDataTable)
+	{
+		UE_LOG(LogAbilityEditor, Warning, TEXT("GameplayAbilityDataTable 未配置或加载失败"));
+		return false;
+	}
+
+	return true;
+}
+
+FString UAbilityEditorHelperLibrary::GetGameplayAbilityBasePath(const UAbilityEditorHelperSettings* Settings)
+{
+	if (!Settings || Settings->GameplayAbilityPath.IsEmpty())
+	{
+		return TEXT("/Game/Abilities/Abilities");
+	}
+
+	FString BasePath = Settings->GameplayAbilityPath;
+	if (!BasePath.StartsWith(TEXT("/")))
+	{
+		BasePath = TEXT("/Game/") + BasePath;
+	}
+	BasePath.RemoveFromEnd(TEXT("/"));
+	return BasePath;
+}
+
+void UAbilityEditorHelperLibrary::CleanupGameplayAbilityFolder(const FString& BasePath, const UDataTable* DataTable)
+{
+#if WITH_EDITOR
+	if (!DataTable)
+	{
+		return;
+	}
+
+	// 收集 DataTable 中的所有行名（带 GA_ 前缀）
+	TSet<FString> ValidAssetNames;
+	for (const TPair<FName, uint8*>& RowPair : DataTable->GetRowMap())
+	{
+		FString RowAssetName = RowPair.Key.ToString();
+		if (!RowAssetName.Contains(TEXT("GA_")))
+		{
+			RowAssetName = TEXT("GA_") + RowAssetName;
+		}
+		ValidAssetNames.Add(RowAssetName);
+	}
+
+	// 扫描目录下的蓝图资产
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+	TArray<FAssetData> AssetDataList;
+	AssetRegistry.GetAssetsByPath(FName(*BasePath), AssetDataList, true);
+
+	TArray<UObject*> ToDelete;
+	for (const FAssetData& AssetData : AssetDataList)
+	{
+		if (AssetData.AssetClassPath == UBlueprint::StaticClass()->GetClassPathName())
+		{
+			FString AssetName = AssetData.AssetName.ToString();
+			if (!ValidAssetNames.Contains(AssetName))
+			{
+				if (UObject* Asset = AssetData.GetAsset())
+				{
+					ToDelete.Add(Asset);
+					UE_LOG(LogAbilityEditor, Log, TEXT("[AbilityEditorHelper] 清理不在 DataTable 中的 GA 资产：%s"), *AssetName);
+				}
+			}
+		}
+	}
+
+	if (ToDelete.Num() > 0)
+	{
+		ObjectTools::DeleteObjectsUnchecked(ToDelete);
+	}
+#endif
+}
+
+UGameplayAbility* UAbilityEditorHelperLibrary::CreateOrImportGameplayAbility(
+	const FString& GameplayAbilityPath,
+	const FGameplayAbilityConfig& Config,
+	bool& bOutSuccess)
+{
+	bOutSuccess = false;
+
+	FString PackageName, AssetName, ObjectPath;
+	if (!ParseAssetPath(GameplayAbilityPath, PackageName, AssetName, ObjectPath))
+	{
+		UE_LOG(LogAbilityEditor, Warning, TEXT("[AbilityEditorHelper] 无法解析路径：%s"), *GameplayAbilityPath);
+		return nullptr;
+	}
+
+	// 尝试加载现有蓝图
+	UBlueprint* ExistingBlueprint = LoadObject<UBlueprint>(nullptr, *ObjectPath);
+	UGameplayAbility* GA = nullptr;
+
+	if (ExistingBlueprint)
+	{
+		GA = Cast<UGameplayAbility>(ExistingBlueprint->GeneratedClass->GetDefaultObject());
+	}
+
+#if WITH_EDITOR
+	// 确定目标父类
+	UClass* DesiredParentClass = UGameplayAbility::StaticClass();
+	if (!Config.ParentClass.IsEmpty())
+	{
+		if (UClass* LoadedClass = LoadClassFromPath<UGameplayAbility>(Config.ParentClass))
+		{
+			DesiredParentClass = LoadedClass;
+		}
+		else
+		{
+			UE_LOG(LogAbilityEditor, Warning, TEXT("[AbilityEditorHelper] 无法加载 ParentClass：%s，使用默认类"), *Config.ParentClass);
+		}
+	}
+	else
+	{
+		// 从 Settings 获取默认类
+		if (const UAbilityEditorHelperSettings* Settings = GetDefault<UAbilityEditorHelperSettings>())
+		{
+			if (Settings->GameplayAbilityClass)
+			{
+				DesiredParentClass = Settings->GameplayAbilityClass;
+			}
+		}
+	}
+
+	// 检查父类是否匹配，不匹配则删除重建
+	if (ExistingBlueprint && GA)
+	{
+		UClass* ExistingParentClass = ExistingBlueprint->ParentClass;
+		if (ExistingParentClass != DesiredParentClass)
+		{
+			UE_LOG(LogAbilityEditor, Log, TEXT("[AbilityEditorHelper] 现有 GA 父类与配置不一致，删除并重建：%s"), *GameplayAbilityPath);
+			TArray<UObject*> ToDelete;
+			ToDelete.Add(ExistingBlueprint);
+			ObjectTools::DeleteObjectsUnchecked(ToDelete);
+			ExistingBlueprint = nullptr;
+			GA = nullptr;
+		}
+	}
+
+	// 不存在则创建蓝图
+	if (!ExistingBlueprint)
+	{
+		if (!FPackageName::IsValidLongPackageName(PackageName))
+		{
+			return nullptr;
+		}
+
+		UPackage* Package = CreatePackage(*PackageName);
+		if (!Package)
+		{
+			return nullptr;
+		}
+
+		// 创建蓝图
+		ExistingBlueprint = FKismetEditorUtilities::CreateBlueprint(
+			DesiredParentClass,
+			Package,
+			FName(*AssetName),
+			BPTYPE_Normal,
+			UBlueprint::StaticClass(),
+			UBlueprintGeneratedClass::StaticClass()
+		);
+
+		if (!ExistingBlueprint)
+		{
+			UE_LOG(LogAbilityEditor, Error, TEXT("[AbilityEditorHelper] 无法创建蓝图：%s"), *GameplayAbilityPath);
+			return nullptr;
+		}
+
+		FAssetRegistryModule::AssetCreated(ExistingBlueprint);
+		Package->MarkPackageDirty();
+	}
+
+	// 获取 CDO
+	GA = Cast<UGameplayAbility>(ExistingBlueprint->GeneratedClass->GetDefaultObject());
+	if (!GA)
+	{
+		UE_LOG(LogAbilityEditor, Error, TEXT("[AbilityEditorHelper] 无法获取 GA CDO：%s"), *GameplayAbilityPath);
+		return nullptr;
+	}
+
+	// 写入配置数据到 GA
+	{
+		// Cost GE
+		if (!Config.CostGameplayEffectClass.IsEmpty())
+		{
+			if (UClass* CostClass = LoadClassFromPath<UGameplayEffect>(Config.CostGameplayEffectClass))
+			{
+				GA->CostGameplayEffectClass = CostClass;
+			}
+		}
+
+		// Cooldown GE
+		if (!Config.CooldownGameplayEffectClass.IsEmpty())
+		{
+			if (UClass* CooldownClass = LoadClassFromPath<UGameplayEffect>(Config.CooldownGameplayEffectClass))
+			{
+				GA->CooldownGameplayEffectClass = CooldownClass;
+			}
+		}
+
+		// Tags
+		auto SetTagRequirements = [&](FName PropertyName, const FGameplayTagContainer& RequiredTags)
+		{
+			if (FProperty* Prop = GA->GetClass()->FindPropertyByName(PropertyName))
+			{
+				// 获取 FGameplayTagRequirements 结构体指针
+				void* StructPtr = Prop->ContainerPtrToValuePtr<void>(GA);
+        
+				// 查找结构体内部的 RequireTags 属性
+				if (FStructProperty* StructProp = CastField<FStructProperty>(Prop))
+				{
+					if (FProperty* InnerProp = StructProp->Struct->FindPropertyByName(TEXT("RequireTags")))
+					{
+						void* InnerValuePtr = InnerProp->ContainerPtrToValuePtr<void>(StructPtr);
+						InnerProp->CopyCompleteValue(InnerValuePtr, &RequiredTags);
+					}
+				}
+			}
+		};
+
+		SetTagRequirements("AssetTags", Config.AssetTags);
+		SetTagRequirements("CancelAbilitiesWithTag", Config.CancelAbilitiesWithTag);
+		SetTagRequirements("BlockAbilitiesWithTag", Config.BlockAbilitiesWithTag);
+		SetTagRequirements("ActivationOwnedTags", Config.ActivationOwnedTags);
+		SetTagRequirements("ActivationRequiredTags", Config.ActivationRequiredTags);
+		SetTagRequirements("ActivationBlockedTags", Config.ActivationBlockedTags);
+		SetTagRequirements("SourceRequiredTags", Config.SourceRequiredTags);
+		SetTagRequirements("SourceBlockedTags", Config.SourceBlockedTags);
+		SetTagRequirements("TargetRequiredTags", Config.TargetRequiredTags);
+		SetTagRequirements("TargetBlockedTags", Config.TargetBlockedTags);
+
+		// Triggers
+		GA->AbilityTriggers.Empty();
+		for (const FAbilityTriggerConfig& TriggerConfig : Config.AbilityTriggers)
+		{
+			FAbilityTriggerData TriggerData;
+			TriggerData.TriggerTag = TriggerConfig.TriggerTag;
+			TriggerData.TriggerSource = TriggerConfig.TriggerSource;
+			GA->AbilityTriggers.Add(TriggerData);
+		}
+
+		// Advanced
+		GA->bServerRespectsRemoteAbilityCancellation = Config.bServerRespectsRemoteAbilityCancellation;
+		GA->bReplicateInputDirectly = Config.bReplicateInputDirectly;
+
+		// 直接赋值枚举类型
+		GA->NetExecutionPolicy = Config.NetExecutionPolicy;
+		GA->NetSecurityPolicy = Config.NetSecurityPolicy;
+		GA->InstancingPolicy = Config.InstancingPolicy;
+		GA->ReplicationPolicy = Config.ReplicationPolicy;
+
+		GA->bRetriggerInstancedAbility = Config.bRetriggerInstancedAbility;
+
+		// 标记脏包
+		ExistingBlueprint->MarkPackageDirty();
+
+		// 广播后处理委托
+		if (GEditor)
+		{
+			if (UAbilityEditorHelperSubsystem* Subsystem = GEditor->GetEditorSubsystem<UAbilityEditorHelperSubsystem>())
+			{
+				Subsystem->BroadcastPostProcessGameplayAbility(&Config, GA);
+			}
+		}
+	}
+
+	bOutSuccess = GA != nullptr;
+	return GA;
+#else
+	bOutSuccess = (GA != nullptr);
+	return GA;
+#endif
+}
+
+void UAbilityEditorHelperLibrary::CreateOrUpdateGameplayAbilitiesFromSettings(bool bClearGameplayAbilityFolderFirst)
+{
+	const UAbilityEditorHelperSettings* Settings = nullptr;
+	UDataTable* DataTable = nullptr;
+	if (!GetGASettingsAndDataTable(Settings, DataTable))
+	{
+		UE_LOG(LogAbilityEditor, Warning, TEXT("[AbilityEditorHelper] Settings 未找到或 DataTable 未设置。"));
+		return;
+	}
+
+	// 校验行结构
+	if (!DataTable->GetRowStruct() || !DataTable->GetRowStruct()->IsChildOf(FGameplayAbilityConfig::StaticStruct()))
+	{
+		UE_LOG(LogAbilityEditor, Warning, TEXT("[AbilityEditorHelper] DataTable 行结构不是 FGameplayAbilityConfig 或其派生类，无法导入。"));
+		return;
+	}
+
+	FString BasePath = GetGameplayAbilityBasePath(Settings);
+
+#if WITH_EDITOR
+	if (bClearGameplayAbilityFolderFirst)
+	{
+		CleanupGameplayAbilityFolder(BasePath, DataTable);
+	}
+#endif
+
+	// 遍历每一行并创建/更新 GA
+	int32 SuccessCount = 0;
+	int32 FailCount = 0;
+
+	for (const TPair<FName, uint8*>& RowPair : DataTable->GetRowMap())
+	{
+		const FName RowName = RowPair.Key;
+		const uint8* RowData = RowPair.Value;
+
+		if (!RowData)
+		{
+			continue;
+		}
+
+		const FGameplayAbilityConfig* Config = reinterpret_cast<const FGameplayAbilityConfig*>(RowData);
+
+		FString RowAssetName = RowName.ToString();
+		if (!RowAssetName.Contains(TEXT("GA_")))
+		{
+			RowAssetName = TEXT("GA_") + RowAssetName;
+		}
+
+		const FString GAPath = FString::Printf(TEXT("%s/%s"), *BasePath, *RowAssetName);
+
+		bool bOK = false;
+		UGameplayAbility* GA = CreateOrImportGameplayAbility(GAPath, *Config, bOK);
+
+		if (bOK && GA)
+		{
+			UE_LOG(LogAbilityEditor, Log, TEXT("[AbilityEditorHelper] 成功创建/更新 GameplayAbility：%s"), *GAPath);
+			++SuccessCount;
+		}
+		else
+		{
+			UE_LOG(LogAbilityEditor, Error, TEXT("[AbilityEditorHelper] 创建/更新失败：%s"), *GAPath);
+			++FailCount;
+		}
+	}
+
+	UE_LOG(LogAbilityEditor, Log, TEXT("[AbilityEditorHelper] GA 导入完成：成功 %d 个，失败 %d 个"), SuccessCount, FailCount);
+}
+
+bool UAbilityEditorHelperLibrary::ImportAndUpdateGameplayAbilitiesFromJson(
+	const FString& JsonFileName,
+	bool bClearGameplayAbilityFolderFirst,
+	TArray<FName>& OutUpdatedRowNames)
+{
+	OutUpdatedRowNames.Reset();
+
+	const UAbilityEditorHelperSettings* Settings = nullptr;
+	UDataTable* DataTable = nullptr;
+	if (!GetGASettingsAndDataTable(Settings, DataTable))
+	{
+		UE_LOG(LogAbilityEditor, Error, TEXT("无法获取 Settings 或 DataTable"));
+		return false;
+	}
+
+	// 校验行结构
+	UScriptStruct* RowStruct = const_cast<UScriptStruct*>(DataTable->GetRowStruct());
+	if (!RowStruct || !RowStruct->IsChildOf(FGameplayAbilityConfig::StaticStruct()))
+	{
+		UE_LOG(LogAbilityEditor, Error, TEXT("DataTable 行结构不是 FGameplayAbilityConfig 或其派生类"));
+		return false;
+	}
+
+	const int32 StructSize = RowStruct->GetStructureSize();
+
+	// 构建 JSON 文件完整路径
+	if (Settings->JsonPath.IsEmpty())
+	{
+		UE_LOG(LogAbilityEditor, Error, TEXT("UAbilityEditorHelperSettings 的 JsonPath 未配置"));
+		return false;
+	}
+	const FString JsonFilePath = FPaths::Combine(Settings->JsonPath, JsonFileName);
+
+	if (!FPaths::FileExists(JsonFilePath))
+	{
+		UE_LOG(LogAbilityEditor, Error, TEXT("JSON 文件不存在：%s"), *JsonFilePath);
+		return false;
+	}
+
+	// 读取 JSON 文件内容
+	FString JsonContent;
+	if (!FFileHelper::LoadFileToString(JsonContent, *JsonFilePath))
+	{
+		UE_LOG(LogAbilityEditor, Error, TEXT("无法读取 JSON 文件：%s"), *JsonFilePath);
+		return false;
+	}
+
+	// 解析 JSON 为数组
+	TArray<TSharedPtr<FJsonValue>> JsonArray;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonContent);
+	if (!FJsonSerializer::Deserialize(Reader, JsonArray))
+	{
+		UE_LOG(LogAbilityEditor, Error, TEXT("JSON 解析失败，格式不正确"));
+		return false;
+	}
+
+	// 缓存现有 DataTable 数据的 JSON 表示
+	TMap<FName, FString> ExistingJsonMap;
+	for (const TPair<FName, uint8*>& RowPair : DataTable->GetRowMap())
+	{
+		if (RowPair.Value)
+		{
+			FString JsonStr = SerializeStructToJsonString(RowStruct, RowPair.Value);
+			ExistingJsonMap.Add(RowPair.Key, JsonStr);
+		}
+	}
+
+	// 解析新配置
+	TMap<FName, TSharedPtr<uint8, ESPMode::ThreadSafe>> NewConfigsMemory;
+	TMap<FName, FString> NewJsonMap;
+
+	for (const TSharedPtr<FJsonValue>& JsonValue : JsonArray)
+	{
+		if (!JsonValue.IsValid() || JsonValue->Type != EJson::Object)
+		{
+			continue;
+		}
+
+		const TSharedPtr<FJsonObject>& JsonObject = JsonValue->AsObject();
+		if (!JsonObject.IsValid())
+		{
+			continue;
+		}
+
+		FString RowNameStr;
+		if (!JsonObject->TryGetStringField(TEXT("Name"), RowNameStr) || RowNameStr.IsEmpty())
+		{
+			UE_LOG(LogAbilityEditor, Warning, TEXT("JSON 条目缺少 Name 字段，已跳过"));
+			continue;
+		}
+
+		TSharedPtr<uint8, ESPMode::ThreadSafe> ConfigMemory(
+			static_cast<uint8*>(FMemory::Malloc(StructSize)),
+			[](uint8* Ptr) { FMemory::Free(Ptr); }
+		);
+		RowStruct->InitializeStruct(ConfigMemory.Get());
+
+		if (!FJsonObjectConverter::JsonObjectToUStruct(JsonObject.ToSharedRef(), RowStruct, ConfigMemory.Get()))
+		{
+			UE_LOG(LogAbilityEditor, Warning, TEXT("无法反序列化行 %s，已跳过"), *RowNameStr);
+			RowStruct->DestroyStruct(ConfigMemory.Get());
+			continue;
+		}
+
+		FName RowName(*RowNameStr);
+		NewConfigsMemory.Add(RowName, ConfigMemory);
+
+		FString NewJsonStr = SerializeStructToJsonString(RowStruct, ConfigMemory.Get());
+		NewJsonMap.Add(RowName, NewJsonStr);
+
+		const FString* ExistingJson = ExistingJsonMap.Find(RowName);
+		if (!ExistingJson || !ExistingJson->Equals(NewJsonStr))
+		{
+			OutUpdatedRowNames.Add(RowName);
+			UE_LOG(LogAbilityEditor, Log, TEXT("检测到变化的行：%s"), *RowNameStr);
+		}
+	}
+
+	if (OutUpdatedRowNames.Num() == 0)
+	{
+		UE_LOG(LogAbilityEditor, Log, TEXT("未检测到任何数据变化，无需更新"));
+		return true;
+	}
+
+	UE_LOG(LogAbilityEditor, Log, TEXT("共检测到 %d 行数据变化"), OutUpdatedRowNames.Num());
+
+#if WITH_EDITOR
+	// 更新 DataTable
+	for (const FName& RowName : OutUpdatedRowNames)
+	{
+		TSharedPtr<uint8, ESPMode::ThreadSafe>* NewConfigMemory = NewConfigsMemory.Find(RowName);
+		if (!NewConfigMemory || !NewConfigMemory->IsValid())
+		{
+			continue;
+		}
+
+		uint8* ExistingRowData = DataTable->FindRowUnchecked(RowName);
+		if (ExistingRowData)
+		{
+			RowStruct->CopyScriptStruct(ExistingRowData, NewConfigMemory->Get());
+		}
+		else
+		{
+			DataTable->AddRow(RowName, *reinterpret_cast<FTableRowBase*>(NewConfigMemory->Get()));
+		}
+	}
+
+	DataTable->MarkPackageDirty();
+
+	FString BasePath = GetGameplayAbilityBasePath(Settings);
+
+	if (bClearGameplayAbilityFolderFirst)
+	{
+		CleanupGameplayAbilityFolder(BasePath, DataTable);
+	}
+
+	// 创建/更新 GA
+	int32 SuccessCount = 0;
+	int32 FailCount = 0;
+
+	for (const FName& RowName : OutUpdatedRowNames)
+	{
+		uint8* ConfigData = DataTable->FindRowUnchecked(RowName);
+		if (!ConfigData)
+		{
+			continue;
+		}
+		const FGameplayAbilityConfig* Config = reinterpret_cast<const FGameplayAbilityConfig*>(ConfigData);
+
+		FString RowAssetName = RowName.ToString();
+		if (!RowAssetName.Contains(TEXT("GA_")))
+		{
+			RowAssetName = TEXT("GA_") + RowAssetName;
+		}
+		const FString GAPath = FString::Printf(TEXT("%s/%s"), *BasePath, *RowAssetName);
+
+		bool bOK = false;
+		UGameplayAbility* GA = CreateOrImportGameplayAbility(GAPath, *Config, bOK);
+		if (bOK && GA)
+		{
+			UE_LOG(LogAbilityEditor, Log, TEXT("[AbilityEditorHelper] 成功创建/更新 GameplayAbility：%s"), *GAPath);
+			++SuccessCount;
+		}
+		else
+		{
+			UE_LOG(LogAbilityEditor, Error, TEXT("[AbilityEditorHelper] 创建/更新失败：%s"), *GAPath);
+			++FailCount;
+		}
+	}
+
+	UE_LOG(LogAbilityEditor, Log, TEXT("[AbilityEditorHelper] GA 增量更新完成：成功 %d 个，失败 %d 个"), SuccessCount, FailCount);
+
+	return FailCount == 0;
+#else
+	return false;
+#endif
+}

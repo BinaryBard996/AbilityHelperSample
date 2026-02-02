@@ -3,19 +3,25 @@
 
 #include "AbilityEditorHelperSettings.h"
 #include "GameplayEffect.h"
+#include "Abilities/GameplayAbility.h"
 #include "AbilityEditorTypes.h"
 
 UAbilityEditorHelperSettings::UAbilityEditorHelperSettings()
 {
 	GameplayEffectClass = UGameplayEffect::StaticClass();
+	GameplayAbilityClass = UGameplayAbility::StaticClass();
 
 	// 初始化需要导出 Schema 的结构体类型路径列表
 	// 使用字符串路径，便于配置文件持久化和用户自定义
 	if (StructTypePathsToExportSchema.Num() == 0)
 	{
-		// 核心配置结构体
+		// GE 核心配置结构体
 		StructTypePathsToExportSchema.Add(FGameplayEffectConfig::StaticStruct()->GetPathName());
 		StructTypePathsToExportSchema.Add(FGEModifierConfig::StaticStruct()->GetPathName());
+
+		// GA 核心配置结构体
+		StructTypePathsToExportSchema.Add(FGameplayAbilityConfig::StaticStruct()->GetPathName());
+		StructTypePathsToExportSchema.Add(FAbilityTriggerConfig::StaticStruct()->GetPathName());
 
 		// 辅助配置结构体
 		StructTypePathsToExportSchema.Add(FTagRequirementsConfig::StaticStruct()->GetPathName());

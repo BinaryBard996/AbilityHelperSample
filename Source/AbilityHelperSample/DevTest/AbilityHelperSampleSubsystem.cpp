@@ -2,11 +2,13 @@
 
 #include "AbilityHelperSampleSubsystem.h"
 #include "EditorSampleTypes.h"
+#include "SampleGameplayAbility.h"
 #include "TestGameplayEffectComponent.h"
 #include "AbilityEditorHelperSubsystem.h"
 #include "AbilityEditorHelperLibrary.h"
 #include "AbilityEditorHelperSettings.h"
 #include "GameplayEffect.h"
+#include "Abilities/GameplayAbility.h"
 #include "Editor.h"
 
 void UAbilityHelperSampleSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -20,7 +22,8 @@ void UAbilityHelperSampleSubsystem::Initialize(FSubsystemCollectionBase& Collect
 	if (UAbilityEditorHelperSettings* Settings = GetMutableDefault<UAbilityEditorHelperSettings>())
 	{
 		Settings->StructTypePathsToExportSchema.AddUnique(TEXT("/Script/AbilityHelperSample.GameplayEffectSampleConfig"));
-		UE_LOG(LogTemp, Log, TEXT("[AbilityHelperSample] 已注册 FGameplayEffectSampleConfig 到 Schema 导出列表"));
+		Settings->StructTypePathsToExportSchema.AddUnique(TEXT("/Script/AbilityHelperSample.GameplayAbilitySampleConfig"));
+		UE_LOG(LogTemp, Log, TEXT("[AbilityHelperSample] 已注册 FGameplayEffectSampleConfig 和 FGameplayAbilitySampleConfig 到 Schema 导出列表"));
 	}
 
 	// 获取 AbilityEditorHelperSubsystem 并绑定委托
@@ -28,10 +31,15 @@ void UAbilityHelperSampleSubsystem::Initialize(FSubsystemCollectionBase& Collect
 	{
 		if (UAbilityEditorHelperSubsystem* HelperSubsystem = GEditor->GetEditorSubsystem<UAbilityEditorHelperSubsystem>())
 		{
-			PostProcessDelegateHandle = HelperSubsystem->OnPostProcessGameplayEffect.AddUObject(
+			// 绑定 GE 委托
+			PostProcessGEDelegateHandle = HelperSubsystem->OnPostProcessGameplayEffect.AddUObject(
 				this, &UAbilityHelperSampleSubsystem::HandlePostProcessGameplayEffect);
-
 			UE_LOG(LogTemp, Log, TEXT("[AbilityHelperSample] 已绑定 OnPostProcessGameplayEffect 委托"));
+
+			// 绑定 GA 委托
+			PostProcessGADelegateHandle = HelperSubsystem->OnPostProcessGameplayAbility.AddUObject(
+				this, &UAbilityHelperSampleSubsystem::HandlePostProcessGameplayAbility);
+			UE_LOG(LogTemp, Log, TEXT("[AbilityHelperSample] 已绑定 OnPostProcessGameplayAbility 委托"));
 		}
 	}
 }
@@ -43,10 +51,12 @@ void UAbilityHelperSampleSubsystem::Deinitialize()
 	{
 		if (UAbilityEditorHelperSubsystem* HelperSubsystem = GEditor->GetEditorSubsystem<UAbilityEditorHelperSubsystem>())
 		{
-			HelperSubsystem->OnPostProcessGameplayEffect.Remove(PostProcessDelegateHandle);
+			HelperSubsystem->OnPostProcessGameplayEffect.Remove(PostProcessGEDelegateHandle);
+			HelperSubsystem->OnPostProcessGameplayAbility.Remove(PostProcessGADelegateHandle);
 		}
 	}
-	PostProcessDelegateHandle.Reset();
+	PostProcessGEDelegateHandle.Reset();
+	PostProcessGADelegateHandle.Reset();
 
 	Super::Deinitialize();
 }
@@ -85,5 +95,43 @@ void UAbilityHelperSampleSubsystem::HandlePostProcessGameplayEffect(const FTable
 	{
 		// 如果没有扩展数据，移除 Component（如果存在）
 		RemoveGEComponent<UTestGameplayEffectComponent>(GE);
+	}
+}
+
+void UAbilityHelperSampleSubsystem::HandlePostProcessGameplayAbility(const FTableRowBase* Config, UGameplayAbility* GA)
+{
+	if (!Config || !GA)
+	{
+		return;
+	}
+
+	// 尝试转换为派生类型
+	const FGameplayAbilitySampleConfig* SampleConfig = static_cast<const FGameplayAbilitySampleConfig*>(Config);
+
+	// 检查 GA 是否是 USampleGameplayAbility 类型
+	USampleGameplayAbility* SampleGA = Cast<USampleGameplayAbility>(GA);
+	if (!SampleGA)
+	{
+		// 如果不是 SampleGameplayAbility，则不处理扩展字段
+		return;
+	}
+
+	// 检查是否有扩展数据需要处理
+	bool bHasExtensionData = (SampleConfig->TestFloatValue != 0.0f) ||
+	                         (SampleConfig->TestIntValue != 0) ||
+	                         SampleConfig->bTestBoolValue;
+
+	if (bHasExtensionData)
+	{
+		// 应用扩展字段到 SampleGameplayAbility
+		SampleGA->TestFloatValue = SampleConfig->TestFloatValue;
+		SampleGA->TestIntValue = SampleConfig->TestIntValue;
+		SampleGA->bTestBoolValue = SampleConfig->bTestBoolValue;
+
+		UE_LOG(LogTemp, Log, TEXT("[AbilityHelperSample] 已应用扩展字段到 GA: %s (TestFloat=%.2f, TestInt=%d, TestBool=%s)"),
+			*GA->GetName(),
+			SampleConfig->TestFloatValue,
+			SampleConfig->TestIntValue,
+			SampleConfig->bTestBoolValue ? TEXT("true") : TEXT("false"));
 	}
 }
