@@ -447,7 +447,7 @@ struct ABILITYEDITORHELPER_API FGameplayAbilityConfig : public FTableRowBase
 
 	// 能力自身的 Asset Tags
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
-	FGameplayTagContainer AssetTags;
+	FGameplayTagContainer AbilityTags;
 
 	// 取消拥有这些 Tags 的 Abilities
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")

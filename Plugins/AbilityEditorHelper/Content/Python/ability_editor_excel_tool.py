@@ -240,6 +240,44 @@ def _apply_enum_validation(ws, col_idx: int, enum_values: list, start_row: int =
     dv.add(cell_range)
     ws.add_data_validation(dv)
 
+def _validate_enum_value(field: dict, value, row_name: str) -> str:
+    """
+    验证枚举值是否有效
+
+    Args:
+        field: Schema 字段定义
+        value: 单元格值
+        row_name: 行名（用于错误定位）
+
+    Returns:
+        错误信息字符串，如果验证通过则返回空字符串
+    """
+    kind = (field.get("kind") or "").strip()
+    if kind != "enum":
+        return ""
+
+    enum_values = field.get("enumValues") or []
+    if not enum_values:
+        return ""  # 没有定义枚举值列表，跳过验证
+
+    field_name = field.get("name", "Unknown")
+
+    # 获取字符串值
+    if value is None or value == "":
+        str_value = ""
+    else:
+        str_value = str(value).strip()
+
+    # 检查空值
+    if not str_value:
+        return f"[{row_name}] 枚举字段 '{field_name}' 未配置值，可选值: {', '.join(enum_values)}"
+
+    # 检查值有效性
+    if str_value not in enum_values:
+        return f"[{row_name}] 枚举字段 '{field_name}' 值 '{str_value}' 不在可选值列表中，可选值: {', '.join(enum_values)}"
+
+    return ""
+
 def _read_existing_xlsx_data(xlsx_path: str) -> tuple:
     """
     读取现有Excel文件的数据和列宽
@@ -851,6 +889,9 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
     schema_dir = schema_dir or _schema_dir_default()
     schema = _load_schema(schema_name_or_path, schema_dir=schema_dir)
 
+    # 枚举值校验错误收集
+    enum_validation_errors = []
+
     struct_name = _schema_struct_name(schema)
     main_sheet_name = struct_name if struct_name else "Main"
 
@@ -950,6 +991,10 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
                 continue
             col = _excel_col_name(f)
             cell_val = r.get(col)
+            # 枚举值校验
+            enum_error = _validate_enum_value(f, cell_val, name)
+            if enum_error:
+                enum_validation_errors.append(enum_error)
             # 基本类型数组使用专门的解析函数
             if _is_primitive_array(f):
                 arr_val = _to_primitive_array_from_cell(f, cell_val)
@@ -966,6 +1011,10 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
                     sf_name = str(sf.get("name") or "").strip()
                     col = _excel_col_name(sf)
                     cell_val = ext_row.get(col)
+                    # 枚举值校验
+                    enum_error = _validate_enum_value(sf, cell_val, f"{name}.{excel_sheet_name}")
+                    if enum_error:
+                        enum_validation_errors.append(enum_error)
                     if _is_primitive_array(sf):
                         item[sf_name] = _to_primitive_array_from_cell(sf, cell_val)
                     else:
@@ -982,7 +1031,9 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
             inner_schema = _load_schema(inner_struct_name, schema_dir=schema_dir)
             rows_for_this = (child_rows_map.get(af_name) or {}).get(name) or []
             arr = []
+            child_row_idx = 0
             for cr in rows_for_this:
+                child_row_idx += 1
                 child_obj = {}
                 for sf in _schema_fields(inner_schema):
                     if sf.get("bExcelIgnore"):
@@ -991,7 +1042,12 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
                         continue
                     sf_name = str(sf.get("name") or "").strip()
                     col = _excel_col_name(sf)
-                    child_obj[sf_name] = _to_scalar_from_cell(inner_schema, sf, cr.get(col))
+                    cell_val = cr.get(col)
+                    # 枚举值校验
+                    enum_error = _validate_enum_value(sf, cell_val, f"{name}.{af_name}[{child_row_idx}]")
+                    if enum_error:
+                        enum_validation_errors.append(enum_error)
+                    child_obj[sf_name] = _to_scalar_from_cell(inner_schema, sf, cell_val)
                 arr.append(child_obj)
             item[af_name] = arr
 
@@ -1000,6 +1056,12 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
     _ensure_dir(out_json_path)
     with open(out_json_path, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=4)
+
+    # 枚举验证结果汇总
+    if enum_validation_errors:
+        _warn(f"[ExcelTools] 发现 {len(enum_validation_errors)} 个枚举字段问题:")
+        for err in enum_validation_errors:
+            _warn(f"  - {err}")
 
     _log(f"[ExcelTools][Schema] 导出完成：{out_json_path}（共{len(result)}条）")
 

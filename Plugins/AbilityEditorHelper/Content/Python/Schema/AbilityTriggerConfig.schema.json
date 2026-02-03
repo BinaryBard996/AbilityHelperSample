@@ -1,0 +1,52 @@
+{
+	"structPath": "/Script/AbilityEditorHelper.AbilityTriggerConfig",
+	"hash": "76ba80183347a22e16a52b06c85c8c21",
+	"fields": [
+		{
+			"name": "TriggerTag",
+			"category": "Trigger",
+			"kind": "struct",
+			"enumPath": "",
+			"enumValues": [],
+			"structPath": "/Script/GameplayTags.GameplayTag",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		},
+		{
+			"name": "TriggerSource",
+			"category": "Trigger",
+			"kind": "enum",
+			"enumPath": "/Script/GameplayAbilities.EGameplayAbilityTriggerSource",
+			"enumValues": [
+				"GameplayEvent",
+				"OwnedTagAdded",
+				"OwnedTagPresent"
+			],
+			"structPath": "",
+			"innerKind": "",
+			"innerStructPath": "",
+			"innerEnumPath": "",
+			"innerEnumValues": [],
+			"bExcelIgnore": false,
+			"excelName": "",
+			"excelHint": "",
+			"excelSheet": "",
+			"excelSeparator": ""
+		}
+	],
+	"specialRules":
+	{
+		"GameplayTagContainer": "tag_container_rule",
+		"GameplayAttribute": "attribute_rule",
+		"TagRequirementsConfig": "tag_requirements_rule",
+		"SoftClassPath": "asset_path_rule",
+		"SoftObjectPath": "asset_path_rule"
+	}
+}

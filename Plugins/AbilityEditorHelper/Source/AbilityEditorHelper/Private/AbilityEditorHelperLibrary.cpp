@@ -1798,14 +1798,60 @@ UGameplayAbility* UAbilityEditorHelperLibrary::CreateOrImportGameplayAbility(
 		return nullptr;
 	}
 
-	// 写入配置数据到 GA
+	// 写入配置数据到 GA（通过 UE 反射访问 protected 成员）
 	{
+		UClass* GAClass = UGameplayAbility::StaticClass();
+
+		// === 辅助 Lambda：通过反射设置 TSubclassOf<UGameplayEffect> 属性 ===
+		auto SetClassProperty = [&](const TCHAR* PropertyName, UClass* ClassValue)
+		{
+			if (!ClassValue) return;
+			if (FClassProperty* Prop = CastField<FClassProperty>(GAClass->FindPropertyByName(PropertyName)))
+			{
+				void* ValuePtr = Prop->ContainerPtrToValuePtr<void>(GA);
+				Prop->SetObjectPropertyValue(ValuePtr, ClassValue);
+			}
+		};
+
+		// === 辅助 Lambda：通过反射设置 FGameplayTagContainer 属性 ===
+		auto SetTagContainerProperty = [&](const TCHAR* PropertyName, const FGameplayTagContainer& Tags)
+		{
+			if (FStructProperty* Prop = CastField<FStructProperty>(GAClass->FindPropertyByName(PropertyName)))
+			{
+				FGameplayTagContainer* ValuePtr = Prop->ContainerPtrToValuePtr<FGameplayTagContainer>(GA);
+				if (ValuePtr)
+				{
+					*ValuePtr = Tags;
+				}
+			}
+		};
+
+		// === 辅助 Lambda：通过反射设置 bool 属性 ===
+		auto SetBoolProperty = [&](const TCHAR* PropertyName, bool Value)
+		{
+			if (FBoolProperty* Prop = CastField<FBoolProperty>(GAClass->FindPropertyByName(PropertyName)))
+			{
+				void* ValuePtr = Prop->ContainerPtrToValuePtr<void>(GA);
+				Prop->SetPropertyValue(ValuePtr, Value);
+			}
+		};
+
+		// === 辅助 Lambda：通过反射设置 TEnumAsByte 属性 ===
+		auto SetByteProperty = [&](const TCHAR* PropertyName, uint8 Value)
+		{
+			if (FByteProperty* Prop = CastField<FByteProperty>(GAClass->FindPropertyByName(PropertyName)))
+			{
+				void* ValuePtr = Prop->ContainerPtrToValuePtr<void>(GA);
+				Prop->SetPropertyValue(ValuePtr, Value);
+			}
+		};
+
 		// Cost GE
 		if (!Config.CostGameplayEffectClass.IsEmpty())
 		{
 			if (UClass* CostClass = LoadClassFromPath<UGameplayEffect>(Config.CostGameplayEffectClass))
 			{
-				GA->CostGameplayEffectClass = CostClass;
+				SetClassProperty(TEXT("CostGameplayEffectClass"), CostClass);
 			}
 		}
 
@@ -1814,62 +1860,49 @@ UGameplayAbility* UAbilityEditorHelperLibrary::CreateOrImportGameplayAbility(
 		{
 			if (UClass* CooldownClass = LoadClassFromPath<UGameplayEffect>(Config.CooldownGameplayEffectClass))
 			{
-				GA->CooldownGameplayEffectClass = CooldownClass;
+				SetClassProperty(TEXT("CooldownGameplayEffectClass"), CooldownClass);
 			}
 		}
 
-		// Tags
-		auto SetTagRequirements = [&](FName PropertyName, const FGameplayTagContainer& RequiredTags)
+		// Tags（UE 5.7 中这些是 FGameplayTagContainer 类型）
+		SetTagContainerProperty(TEXT("AbilityTags"), Config.AbilityTags);
+		SetTagContainerProperty(TEXT("CancelAbilitiesWithTag"), Config.CancelAbilitiesWithTag);
+		SetTagContainerProperty(TEXT("BlockAbilitiesWithTag"), Config.BlockAbilitiesWithTag);
+		SetTagContainerProperty(TEXT("ActivationOwnedTags"), Config.ActivationOwnedTags);
+		SetTagContainerProperty(TEXT("ActivationRequiredTags"), Config.ActivationRequiredTags);
+		SetTagContainerProperty(TEXT("ActivationBlockedTags"), Config.ActivationBlockedTags);
+		SetTagContainerProperty(TEXT("SourceRequiredTags"), Config.SourceRequiredTags);
+		SetTagContainerProperty(TEXT("SourceBlockedTags"), Config.SourceBlockedTags);
+		SetTagContainerProperty(TEXT("TargetRequiredTags"), Config.TargetRequiredTags);
+		SetTagContainerProperty(TEXT("TargetBlockedTags"), Config.TargetBlockedTags);
+
+		// Triggers（通过反射访问 TArray<FAbilityTriggerData>）
+		if (FArrayProperty* TriggersProp = CastField<FArrayProperty>(GAClass->FindPropertyByName(TEXT("AbilityTriggers"))))
 		{
-			if (FProperty* Prop = GA->GetClass()->FindPropertyByName(PropertyName))
+			TArray<FAbilityTriggerData>* TriggersPtr = TriggersProp->ContainerPtrToValuePtr<TArray<FAbilityTriggerData>>(GA);
+			if (TriggersPtr)
 			{
-				// 获取 FGameplayTagRequirements 结构体指针
-				void* StructPtr = Prop->ContainerPtrToValuePtr<void>(GA);
-        
-				// 查找结构体内部的 RequireTags 属性
-				if (FStructProperty* StructProp = CastField<FStructProperty>(Prop))
+				TriggersPtr->Empty();
+				for (const FAbilityTriggerConfig& TriggerConfig : Config.AbilityTriggers)
 				{
-					if (FProperty* InnerProp = StructProp->Struct->FindPropertyByName(TEXT("RequireTags")))
-					{
-						void* InnerValuePtr = InnerProp->ContainerPtrToValuePtr<void>(StructPtr);
-						InnerProp->CopyCompleteValue(InnerValuePtr, &RequiredTags);
-					}
+					FAbilityTriggerData TriggerData;
+					TriggerData.TriggerTag = TriggerConfig.TriggerTag;
+					TriggerData.TriggerSource = TriggerConfig.TriggerSource;
+					TriggersPtr->Add(TriggerData);
 				}
 			}
-		};
-
-		SetTagRequirements("AssetTags", Config.AssetTags);
-		SetTagRequirements("CancelAbilitiesWithTag", Config.CancelAbilitiesWithTag);
-		SetTagRequirements("BlockAbilitiesWithTag", Config.BlockAbilitiesWithTag);
-		SetTagRequirements("ActivationOwnedTags", Config.ActivationOwnedTags);
-		SetTagRequirements("ActivationRequiredTags", Config.ActivationRequiredTags);
-		SetTagRequirements("ActivationBlockedTags", Config.ActivationBlockedTags);
-		SetTagRequirements("SourceRequiredTags", Config.SourceRequiredTags);
-		SetTagRequirements("SourceBlockedTags", Config.SourceBlockedTags);
-		SetTagRequirements("TargetRequiredTags", Config.TargetRequiredTags);
-		SetTagRequirements("TargetBlockedTags", Config.TargetBlockedTags);
-
-		// Triggers
-		GA->AbilityTriggers.Empty();
-		for (const FAbilityTriggerConfig& TriggerConfig : Config.AbilityTriggers)
-		{
-			FAbilityTriggerData TriggerData;
-			TriggerData.TriggerTag = TriggerConfig.TriggerTag;
-			TriggerData.TriggerSource = TriggerConfig.TriggerSource;
-			GA->AbilityTriggers.Add(TriggerData);
 		}
 
-		// Advanced
-		GA->bServerRespectsRemoteAbilityCancellation = Config.bServerRespectsRemoteAbilityCancellation;
-		GA->bReplicateInputDirectly = Config.bReplicateInputDirectly;
+		// Advanced bool 属性
+		SetBoolProperty(TEXT("bServerRespectsRemoteAbilityCancellation"), Config.bServerRespectsRemoteAbilityCancellation);
+		SetBoolProperty(TEXT("bReplicateInputDirectly"), Config.bReplicateInputDirectly);
+		SetBoolProperty(TEXT("bRetriggerInstancedAbility"), Config.bRetriggerInstancedAbility);
 
-		// 直接赋值枚举类型
-		GA->NetExecutionPolicy = Config.NetExecutionPolicy;
-		GA->NetSecurityPolicy = Config.NetSecurityPolicy;
-		GA->InstancingPolicy = Config.InstancingPolicy;
-		GA->ReplicationPolicy = Config.ReplicationPolicy;
-
-		GA->bRetriggerInstancedAbility = Config.bRetriggerInstancedAbility;
+		// 枚举策略属性（TEnumAsByte）
+		SetByteProperty(TEXT("NetExecutionPolicy"), static_cast<uint8>(Config.NetExecutionPolicy));
+		SetByteProperty(TEXT("NetSecurityPolicy"), static_cast<uint8>(Config.NetSecurityPolicy));
+		SetByteProperty(TEXT("InstancingPolicy"), static_cast<uint8>(Config.InstancingPolicy));
+		SetByteProperty(TEXT("ReplicationPolicy"), static_cast<uint8>(Config.ReplicationPolicy));
 
 		// 标记脏包
 		ExistingBlueprint->MarkPackageDirty();

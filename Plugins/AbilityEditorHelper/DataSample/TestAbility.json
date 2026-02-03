@@ -1,0 +1,140 @@
+[
+    {
+        "Name": "TestAbility_1",
+        "Description": "",
+        "ParentClass": "",
+        "CostGameplayEffectClass": "",
+        "CooldownGameplayEffectClass": "",
+        "AbilityTags": {
+            "GameplayTags": [
+                {
+                    "TagName": "Tests.GenericTag.One"
+                }
+            ],
+            "ParentTags": [
+                {
+                    "TagName": "Tests"
+                },
+                {
+                    "TagName": "Tests.GenericTag"
+                }
+            ]
+        },
+        "CancelAbilitiesWithTag": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "BlockAbilitiesWithTag": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "ActivationOwnedTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "ActivationRequiredTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "ActivationBlockedTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "SourceRequiredTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "SourceBlockedTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "TargetRequiredTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "TargetBlockedTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "bServerRespectsRemoteAbilityCancellation": false,
+        "bReplicateInputDirectly": false,
+        "NetExecutionPolicy": "LocalPredicted",
+        "NetSecurityPolicy": "ClientOrServer",
+        "InstancingPolicy": "InstancedPerActor",
+        "ReplicationPolicy": "ReplicateNo",
+        "bRetriggerInstancedAbility": false,
+        "AbilityTriggers": []
+    },
+    {
+        "Name": "TestAbility_2",
+        "Description": "",
+        "ParentClass": "/Game/DevTest/GA_Test.GA_Test_C",
+        "CostGameplayEffectClass": "",
+        "CooldownGameplayEffectClass": "",
+        "AbilityTags": {
+            "GameplayTags": [
+                {
+                    "TagName": "Tests.GenericTag.One"
+                },
+                {
+                    "TagName": "Tests.GenericTag.Two"
+                }
+            ],
+            "ParentTags": [
+                {
+                    "TagName": "Tests"
+                },
+                {
+                    "TagName": "Tests.GenericTag"
+                }
+            ]
+        },
+        "CancelAbilitiesWithTag": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "BlockAbilitiesWithTag": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "ActivationOwnedTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "ActivationRequiredTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "ActivationBlockedTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "SourceRequiredTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "SourceBlockedTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "TargetRequiredTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "TargetBlockedTags": {
+            "GameplayTags": [],
+            "ParentTags": []
+        },
+        "bServerRespectsRemoteAbilityCancellation": false,
+        "bReplicateInputDirectly": false,
+        "NetExecutionPolicy": "LocalPredicted",
+        "NetSecurityPolicy": "ClientOrServer",
+        "InstancingPolicy": "InstancedPerActor",
+        "ReplicationPolicy": "ReplicateNo",
+        "bRetriggerInstancedAbility": false,
+        "TestFloatValue": 1.0,
+        "TestIntValue": 2,
+        "bTestBoolValue": true,
+        "AbilityTriggers": []
+    }
+]
