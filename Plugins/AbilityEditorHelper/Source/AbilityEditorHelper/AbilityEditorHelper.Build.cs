@@ -58,7 +58,11 @@ public class AbilityEditorHelper : ModuleRules
 					"UnrealEd",      // KismetEditorUtilities 等
 					"Kismet",
 					"AssetTools",
-					"AssetRegistry"
+					"AssetRegistry",
+					"Blutility",     // EditorUtilityWidget / EditorUtilitySubsystem
+					"ToolMenus",     // UToolMenus 菜单扩展
+					"UMG",
+					"UMGEditor",      // UWidgetBlueprint 基类
 				}
 			);
 		}

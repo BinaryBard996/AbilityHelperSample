@@ -42,6 +42,13 @@
 #include "GameplayEffectComponents/CancelAbilityTagsGameplayEffectComponent.h"
 #include "Misc/SecureHash.h"
 
+#if WITH_EDITOR
+#include "EditorUtilitySubsystem.h"
+#include "EditorUtilityWidgetBlueprint.h"
+#include "Framework/Notifications/NotificationManager.h"
+#include "Widgets/Notifications/SNotificationList.h"
+#endif
+
 namespace
 {
 	// 将可能的包路径或对象路径解析为标准的包名/资产名/对象路径
@@ -2186,6 +2193,41 @@ bool UAbilityEditorHelperLibrary::ImportAndUpdateGameplayAbilitiesFromJson(
 	UE_LOG(LogAbilityEditor, Log, TEXT("[AbilityEditorHelper] GA 增量更新完成：成功 %d 个，失败 %d 个"), SuccessCount, FailCount);
 
 	return FailCount == 0;
+#else
+	return false;
+#endif
+}
+
+// ===========================================
+// EditorUtilityWidget 相关
+// ===========================================
+
+bool UAbilityEditorHelperLibrary::OpenEditorUtilityWidget()
+{
+#if WITH_EDITOR
+	const UAbilityEditorHelperSettings* Settings = GetAbilityEditorHelperSettings();
+	if (!Settings)
+	{
+		UE_LOG(LogAbilityEditor, Warning, TEXT("[AbilityEditorHelper] 无法获取 AbilityEditorHelperSettings"));
+		return false;
+	}
+
+	UEditorUtilityWidgetBlueprint* WidgetBP = Settings->EditorUtilityWidgetBlueprint.LoadSynchronous();
+	if (!WidgetBP)
+	{
+		UE_LOG(LogAbilityEditor, Warning, TEXT("[AbilityEditorHelper] EditorUtilityWidgetBlueprint 未配置或加载失败，请在 Project Settings → Ability Editor Helper → EditorWidget 中设置"));
+		return false;
+	}
+
+	UEditorUtilitySubsystem* Subsystem = GEditor->GetEditorSubsystem<UEditorUtilitySubsystem>();
+	if (!Subsystem)
+	{
+		UE_LOG(LogAbilityEditor, Warning, TEXT("[AbilityEditorHelper] 无法获取 EditorUtilitySubsystem"));
+		return false;
+	}
+
+	Subsystem->SpawnAndRegisterTab(WidgetBP);
+	return true;
 #else
 	return false;
 #endif

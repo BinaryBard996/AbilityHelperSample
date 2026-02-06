@@ -11,6 +11,9 @@ UAbilityEditorHelperSettings::UAbilityEditorHelperSettings()
 	GameplayEffectClass = UGameplayEffect::StaticClass();
 	GameplayAbilityClass = UGameplayAbility::StaticClass();
 
+	GameplayEffectDataType = TEXT("GameplayEffectConfig");
+	GameplayAbilityDataType = TEXT("GameplayAbilityConfig");
+
 	// 初始化需要导出 Schema 的结构体类型路径列表
 	// 使用字符串路径，便于配置文件持久化和用户自定义
 	if (StructTypePathsToExportSchema.Num() == 0)

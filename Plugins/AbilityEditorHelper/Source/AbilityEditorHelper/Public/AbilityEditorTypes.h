@@ -249,7 +249,7 @@ struct FGEModifierConfig
 	EGameplayEffectMagnitudeCalculation MagnitudeCalculationType = EGameplayEffectMagnitudeCalculation::ScalableFloat;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier")
-	float Magnitude;
+	float Magnitude = 0.f;
 
 	// === 增强功能：AttributeBased 计算配置 ===
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier")

@@ -10,6 +10,7 @@
 class UGameplayEffect;
 class UGameplayAbility;
 class UDataTable;
+class UEditorUtilityWidgetBlueprint;
 
 /**
  *
@@ -50,6 +51,24 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "GameplayAbility")
 	FString GameplayAbilityPath;
 
+	// === Excel/数据类型 配置 ===
+
+	/** GameplayEffect 对应的 Excel 文件名（可不带 .xlsx 后缀） */
+	UPROPERTY(Config, BlueprintReadWrite, EditAnywhere, Category = "GameplayEffect|Import")
+	FString GameplayEffectExcelName;
+
+	/** GameplayAbility 对应的 Excel 文件名（可不带 .xlsx 后缀） */
+	UPROPERTY(Config, BlueprintReadWrite, EditAnywhere, Category = "GameplayAbility|Import")
+	FString GameplayAbilityExcelName;
+
+	/** GameplayEffect 配置结构体的类型路径（如 /Script/AbilityEditorHelper.GameplayEffectConfig） */
+	UPROPERTY(Config, BlueprintReadWrite, EditAnywhere, Category = "GameplayEffect|Import")
+	FString GameplayEffectDataType;
+
+	/** GameplayAbility 配置结构体的类型路径（如 /Script/AbilityEditorHelper.GameplayAbilityConfig） */
+	UPROPERTY(Config, BlueprintReadWrite, EditAnywhere, Category = "GameplayAbility|Import")
+	FString GameplayAbilityDataType;
+
 	// === 数据路径配置 ===
 
 	/** Excel的数据存储路径 */
@@ -65,6 +84,12 @@ public:
 	FString SchemaPath;
 
 	// === Schema 配置 ===
+
+	// === EditorWidget 配置 ===
+
+	/** 编辑器工具窗口对应的 EditorUtilityWidget 蓝图资产，可通过 Window 菜单中的 Action 打开 */
+	UPROPERTY(Config, EditAnywhere, Category = "EditorWidget")
+	TSoftObjectPtr<UEditorUtilityWidgetBlueprint> EditorUtilityWidgetBlueprint;
 
 	/**
 	 * 需要自动导出 Schema 的结构体类型路径列表

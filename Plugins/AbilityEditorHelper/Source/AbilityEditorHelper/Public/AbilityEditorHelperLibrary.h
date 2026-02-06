@@ -70,6 +70,13 @@ public:
 	static const UAbilityEditorHelperSettings* GetAbilityEditorHelperSettings();
 
 	/**
+	 * 打开 UAbilityEditorHelperSettings 中配置的 EditorUtilityWidget。
+	 * 若未配置或加载失败则输出警告并返回 false。
+	 */
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|EditorWidget")
+	static bool OpenEditorUtilityWidget();
+
+	/**
 	 * 在指定路径和父类的基础上创建一个Blueprint资产并返回。
 	 * 支持路径格式：
 	 *   - /Game/Folder/AssetName
