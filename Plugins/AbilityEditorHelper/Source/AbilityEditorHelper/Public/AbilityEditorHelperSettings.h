@@ -91,6 +91,15 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "EditorWidget")
 	TSoftObjectPtr<UEditorUtilityWidgetBlueprint> EditorUtilityWidgetBlueprint;
 
+	// === Python 配置 ===
+
+	/**
+	 * 插件启动时自动执行的 Python 脚本列表
+	 * 路径相对于插件 Content/Python 目录（例如：Editor/ability_editor_helper_python_library.py）
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Python")
+	TArray<FString> StartupPythonScripts;
+
 	/**
 	 * 需要自动导出 Schema 的结构体类型路径列表
 	 * 格式：/Script/ModuleName.StructName

@@ -115,7 +115,7 @@
             "ParentTags": []
         },
         "GrantedAbilityClasses": [],
-        "TestIntValue": 10,
+        "TestIntValue": 100,
         "bTestBoolValue": false,
         "Modifiers": [
             {
@@ -288,6 +288,8 @@
             "ParentTags": []
         },
         "GrantedAbilityClasses": [],
+        "TestIntValue": 1,
+        "bTestBoolValue": true,
         "Modifiers": [],
         "GameplayCues": [],
         "ImmunityQueries": [],

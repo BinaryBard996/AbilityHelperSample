@@ -36,11 +36,15 @@ class ABILITYEDITORHELPER_API UAbilityEditorHelperSubsystem : public UEditorSubs
 	GENERATED_BODY()
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
-	virtual void Deinitialize() override { CachedGameplayEffectDataTable = nullptr; Super::Deinitialize(); }
+	virtual void Deinitialize() override { CachedGameplayEffectDataTable = nullptr; CachedGameplayAbilityDataTable = nullptr; Super::Deinitialize(); }
 
 	/** 获取缓存的 DataTable */
 	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|Subsystem")
 	UDataTable* GetCachedGameplayEffectDataTable() const { return CachedGameplayEffectDataTable; }
+
+	/** 获取缓存的 GA DataTable */
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|Subsystem")
+	UDataTable* GetCachedGameplayAbilityDataTable() const { return CachedGameplayAbilityDataTable; }
 
 	/**
 	 * 后处理委托：项目 Source 可注册此委托来处理派生类的扩展字段

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "EditorUtilityWidget.h"
+#include "Engine/DataTable.h"
 #include "AbilityEditorHelperWidget.generated.h"
 
 /**
@@ -28,6 +29,14 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="AbilityEditorHelper|EditorWidget")
 	FString GetGameplayAbilityExcelName() const;
 
+	/** 基于 GameplayEffectExcelName 解析出 JSON 文件名（后缀替换为 .json） */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category="AbilityEditorHelper|EditorWidget")
+	FString GetGameplayEffectJsonName() const;
+
+	/** 基于 GameplayAbilityExcelName 解析出 JSON 文件名（后缀替换为 .json） */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category="AbilityEditorHelper|EditorWidget")
+	FString GetGameplayAbilityJsonName() const;
+
 	/** 读取 Settings 中的 GameplayEffectDataType */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="AbilityEditorHelper|EditorWidget")
 	FString GetGameplayEffectDataType() const;
@@ -43,6 +52,14 @@ public:
 	/** 将 GameplayAbilityExcelName 写入 Settings 并保存 */
 	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|EditorWidget")
 	void SaveGameplayAbilityExcelName(const FString& InName);
+
+	/** 获取并加载 Settings 中配置的 GameplayEffect DataTable */
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|EditorWidget")
+	UDataTable* GetGameplayEffectDataTable() const;
+
+	/** 获取并加载 Settings 中配置的 GameplayAbility DataTable */
+	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|EditorWidget")
+	UDataTable* GetGameplayAbilityDataTable() const;
 
 	/** 在编辑器右下角显示 Toast 通知（Duration <= 0 时需手动点击关闭） */
 	UFUNCTION(BlueprintCallable, Category="AbilityEditorHelper|EditorWidget", meta=(AdvancedDisplay="Duration"))

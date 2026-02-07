@@ -1006,19 +1006,19 @@ def export_excel_to_json_using_schema(in_path: str, out_json_path: str, schema_n
         # 写入 ExcelSheet 子表字段
         for excel_sheet_name, sheet_fields in excel_sheet_fields.items():
             ext_row = (excel_sheet_rows_map.get(excel_sheet_name) or {}).get(name)
-            if ext_row:
-                for sf in sheet_fields:
-                    sf_name = str(sf.get("name") or "").strip()
-                    col = _excel_col_name(sf)
-                    cell_val = ext_row.get(col)
-                    # 枚举值校验
+            for sf in sheet_fields:
+                sf_name = str(sf.get("name") or "").strip()
+                col = _excel_col_name(sf)
+                cell_val = ext_row.get(col) if ext_row else None
+                # 枚举值校验
+                if ext_row:
                     enum_error = _validate_enum_value(sf, cell_val, f"{name}.{excel_sheet_name}")
                     if enum_error:
                         enum_validation_errors.append(enum_error)
-                    if _is_primitive_array(sf):
-                        item[sf_name] = _to_primitive_array_from_cell(sf, cell_val)
-                    else:
-                        item[sf_name] = _to_scalar_from_cell(schema, sf, cell_val)
+                if _is_primitive_array(sf):
+                    item[sf_name] = _to_primitive_array_from_cell(sf, cell_val)
+                else:
+                    item[sf_name] = _to_scalar_from_cell(schema, sf, cell_val)
 
         # 写入 array<struct> 子表
         for af in array_fields:

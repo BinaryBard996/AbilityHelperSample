@@ -25,6 +25,18 @@ FString UAbilityEditorHelperWidget::GetGameplayAbilityExcelName() const
 	return Name;
 }
 
+FString UAbilityEditorHelperWidget::GetGameplayEffectJsonName() const
+{
+	FString Name = GetGameplayEffectExcelName();
+	return FPaths::ChangeExtension(Name, TEXT(".json"));
+}
+
+FString UAbilityEditorHelperWidget::GetGameplayAbilityJsonName() const
+{
+	FString Name = GetGameplayAbilityExcelName();
+	return FPaths::ChangeExtension(Name, TEXT(".json"));
+}
+
 FString UAbilityEditorHelperWidget::GetGameplayEffectDataType() const
 {
 	return GetDefault<UAbilityEditorHelperSettings>()->GameplayEffectDataType;
@@ -33,6 +45,18 @@ FString UAbilityEditorHelperWidget::GetGameplayEffectDataType() const
 FString UAbilityEditorHelperWidget::GetGameplayAbilityDataType() const
 {
 	return GetDefault<UAbilityEditorHelperSettings>()->GameplayAbilityDataType;
+}
+
+UDataTable* UAbilityEditorHelperWidget::GetGameplayEffectDataTable() const
+{
+	const TSoftObjectPtr<UDataTable>& TablePtr = GetDefault<UAbilityEditorHelperSettings>()->GameplayEffectDataTable;
+	return TablePtr.LoadSynchronous();
+}
+
+UDataTable* UAbilityEditorHelperWidget::GetGameplayAbilityDataTable() const
+{
+	const TSoftObjectPtr<UDataTable>& TablePtr = GetDefault<UAbilityEditorHelperSettings>()->GameplayAbilityDataTable;
+	return TablePtr.LoadSynchronous();
 }
 
 void UAbilityEditorHelperWidget::SaveGameplayEffectExcelName(const FString& InName)

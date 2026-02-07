@@ -41,6 +41,7 @@
 #include "Serialization/JsonSerializer.h"
 #include "GameplayEffectComponents/CancelAbilityTagsGameplayEffectComponent.h"
 #include "Misc/SecureHash.h"
+#include "Serialization/ArchiveUObject.h"
 
 #if WITH_EDITOR
 #include "EditorUtilitySubsystem.h"
@@ -241,6 +242,67 @@ namespace
 		return Query;
 	}
 
+	/**
+	 * 支持 FObjectPtr 序列化的内存写入 Archive（FMemoryWriter 不支持 TObjectPtr）
+	 */
+	class FGEStateWriter : public FArchiveUObject
+	{
+	public:
+		TArray<uint8>& Bytes;
+
+		FGEStateWriter(TArray<uint8>& InBytes) : Bytes(InBytes)
+		{
+			SetIsSaving(true);
+		}
+
+		virtual void Serialize(void* Data, int64 Num) override
+		{
+			if (Num > 0)
+			{
+				const int64 StartIndex = Bytes.AddUninitialized(Num);
+				FMemory::Memcpy(Bytes.GetData() + StartIndex, Data, Num);
+			}
+		}
+
+		virtual FArchive& operator<<(UObject*& Obj) override
+		{
+			// 将对象引用序列化为路径字符串，用于比较
+			FString PathName = Obj ? Obj->GetPathName() : FString();
+			*this << PathName;
+			return *this;
+		}
+
+		virtual FString GetArchiveName() const override
+		{
+			return TEXT("FGEStateWriter");
+		}
+	};
+
+	/**
+	 * 将 UObject 及其所有子对象序列化为字节数组，用于变更检测
+	 * 适用于 GE、GA CDO 等需要比较前后状态的场景
+	 */
+	static TArray<uint8> SerializeObjectState(UObject* Obj)
+	{
+		TArray<uint8> Bytes;
+		FGEStateWriter Ar(Bytes);
+		Obj->Serialize(Ar);
+
+		// 同时序列化所有子对象（GE Components 等），以捕获组件属性变更
+		TArray<UObject*> SubObjects;
+		GetObjectsWithOuter(Obj, SubObjects, false);
+		SubObjects.Sort([](const UObject& A, const UObject& B)
+		{
+			return A.GetName() < B.GetName();
+		});
+		for (UObject* SubObj : SubObjects)
+		{
+			SubObj->Serialize(Ar);
+		}
+
+		return Bytes;
+	}
+
 }
 
 const UAbilityEditorHelperSettings* UAbilityEditorHelperLibrary::GetAbilityEditorHelperSettings()
@@ -368,6 +430,8 @@ UGameplayEffect* UAbilityEditorHelperLibrary::CreateOrImportGameplayEffect(const
 	}
 
 #if WITH_EDITOR
+	bool bIsNewlyCreated = false;
+
 	// 若已存在且提供了 ParentClass，比较现有 GE 的父类与配置的父类，不一致则删除资产以触发重建
 	if (GE && !Config.ParentClass.IsEmpty())
 	{
@@ -384,10 +448,11 @@ UGameplayEffect* UAbilityEditorHelperLibrary::CreateOrImportGameplayEffect(const
 
 		if (DesiredParentClass)
 		{
+			// GE 通过 NewObject(Package, ParentGEClass, ...) 创建，
+			// GE->GetClass() 即为创建时指定的类，直接比较即可
 			UClass* ExistingClass = GE->GetClass();
-			UClass* ExistingParentClass = ExistingClass ? ExistingClass->GetSuperClass() : nullptr;
 
-			if (ExistingParentClass != DesiredParentClass)
+			if (ExistingClass != DesiredParentClass)
 			{
 				UE_LOG(LogTemp, Log, TEXT("[AbilityEditorHelper] 现有 GE 父类与配置不一致，删除并重建：%s"), *GameplayEffectPath);
 
@@ -460,11 +525,18 @@ UGameplayEffect* UAbilityEditorHelperLibrary::CreateOrImportGameplayEffect(const
 
 		FAssetRegistryModule::AssetCreated(GE);
 		Package->MarkPackageDirty();
+		bIsNewlyCreated = true;
 	}
 
 	// 将配置写入GE（基础版）
 	if (GE)
 	{
+		// 变更检测：记录配置应用前的序列化状态
+		TArray<uint8> BeforeBytes;
+		if (!bIsNewlyCreated)
+		{
+			BeforeBytes = SerializeObjectState(GE);
+		}
 		// 基础
 		GE->DurationPolicy = Config.DurationType;
 		GE->DurationMagnitude = FScalableFloat(Config.DurationMagnitude);
@@ -769,15 +841,31 @@ UGameplayEffect* UAbilityEditorHelperLibrary::CreateOrImportGameplayEffect(const
 			}
 		}
 		
-		// 标记脏包
-		GE->MarkPackageDirty();
-
 		// 广播后处理委托，让项目 Source 可以处理派生类的扩展字段
 		if (GEditor)
 		{
 			if (UAbilityEditorHelperSubsystem* Subsystem = GEditor->GetEditorSubsystem<UAbilityEditorHelperSubsystem>())
 			{
 				Subsystem->BroadcastPostProcessGameplayEffect(&Config, GE);
+			}
+		}
+
+		// 变更检测：仅在属性实际发生变化时才标记脏包
+		if (bIsNewlyCreated)
+		{
+			GE->MarkPackageDirty();
+		}
+		else
+		{
+			TArray<uint8> AfterBytes = SerializeObjectState(GE);
+			if (BeforeBytes != AfterBytes)
+			{
+				GE->MarkPackageDirty();
+				UE_LOG(LogTemp, Log, TEXT("[AbilityEditorHelper] GE 已变更，标记脏包：%s"), *GE->GetName());
+			}
+			else
+			{
+				UE_LOG(LogTemp, Verbose, TEXT("[AbilityEditorHelper] GE 未变更，跳过标记脏包：%s"), *GE->GetName());
 			}
 		}
 	}
@@ -1723,6 +1811,8 @@ UGameplayAbility* UAbilityEditorHelperLibrary::CreateOrImportGameplayAbility(
 	}
 
 #if WITH_EDITOR
+	bool bIsNewlyCreated = false;
+
 	// 确定目标父类
 	UClass* DesiredParentClass = UGameplayAbility::StaticClass();
 	if (!Config.ParentClass.IsEmpty())
@@ -1795,6 +1885,7 @@ UGameplayAbility* UAbilityEditorHelperLibrary::CreateOrImportGameplayAbility(
 
 		FAssetRegistryModule::AssetCreated(ExistingBlueprint);
 		Package->MarkPackageDirty();
+		bIsNewlyCreated = true;
 	}
 
 	// 获取 CDO
@@ -1803,6 +1894,13 @@ UGameplayAbility* UAbilityEditorHelperLibrary::CreateOrImportGameplayAbility(
 	{
 		UE_LOG(LogAbilityEditor, Error, TEXT("[AbilityEditorHelper] 无法获取 GA CDO：%s"), *GameplayAbilityPath);
 		return nullptr;
+	}
+
+	// 变更检测：记录配置应用前的序列化状态
+	TArray<uint8> BeforeBytes;
+	if (!bIsNewlyCreated)
+	{
+		BeforeBytes = SerializeObjectState(GA);
 	}
 
 	// 写入配置数据到 GA（通过 UE 反射访问 protected 成员）
@@ -1911,15 +2009,31 @@ UGameplayAbility* UAbilityEditorHelperLibrary::CreateOrImportGameplayAbility(
 		SetByteProperty(TEXT("InstancingPolicy"), static_cast<uint8>(Config.InstancingPolicy));
 		SetByteProperty(TEXT("ReplicationPolicy"), static_cast<uint8>(Config.ReplicationPolicy));
 
-		// 标记脏包
-		ExistingBlueprint->MarkPackageDirty();
-
 		// 广播后处理委托
 		if (GEditor)
 		{
 			if (UAbilityEditorHelperSubsystem* Subsystem = GEditor->GetEditorSubsystem<UAbilityEditorHelperSubsystem>())
 			{
 				Subsystem->BroadcastPostProcessGameplayAbility(&Config, GA);
+			}
+		}
+
+		// 变更检测：仅在属性实际发生变化时才标记脏包
+		if (bIsNewlyCreated)
+		{
+			ExistingBlueprint->MarkPackageDirty();
+		}
+		else
+		{
+			TArray<uint8> AfterBytes = SerializeObjectState(GA);
+			if (BeforeBytes != AfterBytes)
+			{
+				ExistingBlueprint->MarkPackageDirty();
+				UE_LOG(LogAbilityEditor, Log, TEXT("[AbilityEditorHelper] GA 已变更，标记脏包：%s"), *GA->GetName());
+			}
+			else
+			{
+				UE_LOG(LogAbilityEditor, Verbose, TEXT("[AbilityEditorHelper] GA 未变更，跳过标记脏包：%s"), *GA->GetName());
 			}
 		}
 	}

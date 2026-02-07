@@ -63,6 +63,9 @@
         "InstancingPolicy": "InstancedPerActor",
         "ReplicationPolicy": "ReplicateNo",
         "bRetriggerInstancedAbility": false,
+        "TestFloatValue": 0.0,
+        "TestIntValue": 0,
+        "bTestBoolValue": false,
         "AbilityTriggers": []
     },
     {

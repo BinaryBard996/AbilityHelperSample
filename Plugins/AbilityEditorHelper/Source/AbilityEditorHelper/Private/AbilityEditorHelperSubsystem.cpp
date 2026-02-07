@@ -45,4 +45,19 @@ void UAbilityEditorHelperSubsystem::Initialize(FSubsystemCollectionBase& Collect
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 未能加载 GameplayEffectDataTable，请检查设置。"));
 	}
+
+	// 优先取已加载实例，否则同步加载
+	CachedGameplayAbilityDataTable = Settings->GameplayAbilityDataTable.IsValid()
+		? Settings->GameplayAbilityDataTable.Get()
+		: Settings->GameplayAbilityDataTable.LoadSynchronous();
+
+	if (CachedGameplayAbilityDataTable)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[AbilityEditorHelper] 已缓存 GameplayAbilityDataTable：%s"),
+			*CachedGameplayAbilityDataTable->GetPathName());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[AbilityEditorHelper] 未能加载 GameplayAbilityDataTable，请检查设置。"));
+	}
 }

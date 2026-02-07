@@ -15,4 +15,9 @@ public:
 private:
 	/** 注册编辑器菜单扩展（Window 菜单） */
 	void RegisterMenuExtensions();
+
+	/** 在引擎初始化完成后注册 Python 路径并执行启动脚本 */
+	void RegisterPythonScripts();
+
+	FDelegateHandle EngineLoopInitHandle;
 };

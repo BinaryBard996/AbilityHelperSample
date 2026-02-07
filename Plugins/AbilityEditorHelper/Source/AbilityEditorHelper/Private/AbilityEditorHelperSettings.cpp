@@ -14,6 +14,13 @@ UAbilityEditorHelperSettings::UAbilityEditorHelperSettings()
 	GameplayEffectDataType = TEXT("GameplayEffectConfig");
 	GameplayAbilityDataType = TEXT("GameplayAbilityConfig");
 
+	// 默认启动脚本
+	if (StartupPythonScripts.Num() == 0)
+	{
+		StartupPythonScripts.Add(TEXT("Editor/ability_editor_helper_python_library.py"));
+		StartupPythonScripts.Add(TEXT("Editor/ability_editor_helper_widget.py"));
+	}
+
 	// 初始化需要导出 Schema 的结构体类型路径列表
 	// 使用字符串路径，便于配置文件持久化和用户自定义
 	if (StructTypePathsToExportSchema.Num() == 0)
